@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4-TME Settings | .axs instruments</title>
+<link rel="preload" href="assets/fonts/alagard.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/favicon-180.png">
+<style>
+  /* Settings: the panel's SETTINGS menu (MIDI, LEDS, VALUES, DISPLAY), laid out
+     like the DCLK editor's rows, and a MIDI in monitor. */
+  .conn { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 14px 16px; }
+  .conn-status { display: flex; align-items: center; gap: 14px; flex: 1 1 260px; min-width: 0; }
+  .conn-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .conn-title { font-family: var(--label); font-size: 16px; line-height: 1.2; text-transform: uppercase; }
+  .conn-detail { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+  .conn-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .status-line { margin: -14px 0 0; font-family: var(--label); font-size: 16px; line-height: 1.4; text-transform: uppercase; }
+  .status-line.error { padding: 10px 14px; border: 2px solid transparent; border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); text-transform: none; font-family: var(--body); }
+
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  fieldset:disabled .group { opacity: 0.45; }
+  .groups { display: flex; flex-direction: column; gap: 30px; }
+  .group { display: flex; flex-direction: column; }
+  .row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; align-items: center; padding: 16px 0;
+    background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 6px) top left / 100% 2px no-repeat;
+  }
+  .group .row:first-of-type { background: none; padding-top: 6px; }
+  .row > .seg, .row > .switch, .row > .readout { justify-self: end; }
+  @media (max-width: 680px) { .row { grid-template-columns: 1fr; } .row > .seg, .row > .switch, .row > .readout { justify-self: start; } .seg { justify-content: flex-start; } }
+  .label { font-weight: 600; font-size: 18px; line-height: 1.3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .hint { font-size: 16px; line-height: 1.4; margin-top: 4px; max-width: 46ch; }
+
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .seg.ch { max-width: 420px; }
+  .seg label { position: relative; }
+  .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .seg span {
+    display: block; min-width: 44px; padding: 10px 11px 9px; text-align: center;
+    font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; white-space: nowrap;
+    border: 2px solid transparent; border-image: var(--px-dots) 8 / 8px round;
+  }
+  .seg label:hover input:not(:checked) + span { border-image: var(--px-frame) 8 / 8px round; }
+  .seg input:checked + span { border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+  .seg input:focus-visible + span { outline: 2px dashed var(--ink); outline-offset: 3px; }
+
+  .switch { position: relative; display: inline-flex; align-items: center; gap: 12px; cursor: pointer; font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch .track { width: 56px; height: 32px; position: relative; border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round; }
+  .switch .track::after { content: ""; position: absolute; top: 6px; left: 6px; width: 16px; height: 16px; background: var(--ink); transition: transform 90ms steps(3); }
+  .switch input:checked + .track { border-image: var(--px-fill) 8 fill / 8px round; }
+  .switch input:checked + .track::after { background: var(--paper); transform: translateX(24px); }
+  .switch input:focus-visible + .track { outline: 2px dashed var(--ink); outline-offset: 3px; }
+
+  .led-preview { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  .led-preview .vled { width: 16px; height: 16px; }
+  .led-preview small { font-size: 16px; }
+
+  /* MIDI monitor */
+  .monitor { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 16px; }
+  @media (max-width: 640px) { .monitor { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .ro { display: flex; flex-direction: column; gap: 6px; }
+  .ro-k { font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+  .ro-v { font-family: var(--display); font-size: 32px; line-height: 1; white-space: nowrap; }
+  .gates { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-top: 12px; border-top: 2px dotted var(--ink); }
+  .gate { display: flex; align-items: center; gap: 8px; font-family: var(--label); font-size: 16px; text-transform: uppercase; }
+  .gate .vled { width: 16px; height: 16px; }
+
+  .save { display: flex; align-items: center; gap: 10px; text-transform: uppercase; }
+  .reset { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .about { font-size: 16px; display: flex; flex-direction: column; gap: 6px; }
+</style>
+</head>
+<body class="offline">
+<main class="panel">
+  <header class="plate">
+    <a class="back-link" href="index.html" data-tool>&lt; All&nbsp;tools</a>
+    <div class="plate-top">
+      <div class="wordmark">
+        <div class="brand">.axs instruments</div>
+        <h1><span class="logo">4-TME</span> <span class="tool-tag">Settings</span></h1>
+        <p class="logo-sub">4-Voice Poly Synth</p>
+      </div>
+    </div>
+    <div class="trace" aria-hidden="true">
+      <span class="node"></span><span class="pulses"></span>
+      <span class="flat planet-spot"><img class="planet px" src="assets/planet.svg" width="80" height="56" alt=""></span>
+      <span class="pulses short"></span><span class="flat end"></span><span class="node"></span>
+    </div>
+    <p class="sub">The panel's SETTINGS menu over USB. Changes apply at once and 4-TME saves them half a second later, like confirming in the&nbsp;menu.</p>
+  </header>
+
+  <section class="conn frame" aria-live="polite">
+    <div class="conn-status">
+      <span class="led" id="connLed"></span>
+      <div class="conn-text">
+        <span class="conn-title" id="connTitle">Not connected</span>
+        <span class="conn-detail" id="connDetail"></span>
+      </div>
+    </div>
+    <div class="conn-actions">
+      <button class="btn primary" id="connectBtn" type="button">Connect 4-TME</button>
+      <button class="btn" id="demoBtn" type="button">Try demo</button>
+      <button class="btn" id="disconnectBtn" type="button" hidden>Disconnect</button>
+    </div>
+  </section>
+  <p class="status-line" id="statusLine" role="status" hidden></p>
+
+  <fieldset id="settings" disabled>
+    <div class="groups">
+      <section class="group" aria-labelledby="gMidi">
+        <h2 class="section-head" id="gMidi">MIDI</h2>
+        <div class="row">
+          <div><div class="label">MIDI in channel <span class="chip">MIDI</span></div>
+            <div class="hint">Omni plays every channel. Notes go round-robin over the four&nbsp;voices.</div></div>
+          <div class="seg ch" id="segCh" role="radiogroup" aria-label="MIDI in channel"></div>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="gPanel">
+        <h2 class="section-head" id="gPanel">Panel</h2>
+        <div class="row">
+          <div><div class="label">LED brightness <span class="chip">LEDS</span></div>
+            <div class="hint">How bright a lit voice LED is, and how far it rises with each&nbsp;note.</div>
+            <div class="led-preview" aria-hidden="true"><span class="vled" id="pvLit"></span><small>lit</small><span class="vled" id="pvFlash"></span><small>note</small></div></div>
+          <div class="seg" id="segLed" role="radiogroup" aria-label="LED brightness"></div>
+        </div>
+        <div class="row">
+          <div><div class="label">Value readout <span class="chip">VALUES</span></div>
+            <div class="hint">On: turning an encoder shows its name and value on the screen. Off: the planets stay up while you&nbsp;play.</div></div>
+          <label class="switch"><input type="checkbox" id="valuesSw"><span class="track"></span><span id="valuesText">On</span></label>
+        </div>
+        <div class="row">
+          <div><div class="label">Screen timeout <span class="chip">DISPLAY</span></div>
+            <div class="hint">The screen switches off after this long without a touch. Any control or an incoming note wakes&nbsp;it.</div></div>
+          <div class="seg" id="segSaver" role="radiogroup" aria-label="Screen timeout"></div>
+        </div>
+      </section>
+
+      <div class="foot" style="border-top:0;padding-top:0">
+        <div class="save" id="save"><span class="led" id="saveLed"></span><span id="saveText">Connect to see 4-TME's settings</span></div>
+        <div class="reset">
+          <button class="btn danger" id="resetBtn" type="button">Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  </fieldset>
+
+  <section aria-labelledby="gMon">
+    <h2 class="section-head" id="gMon">MIDI in</h2>
+    <div class="monitor frame">
+      <div class="ro"><span class="ro-k">Note</span><span class="ro-v" id="mNote">&ndash;</span></div>
+      <div class="ro"><span class="ro-k">Channel</span><span class="ro-v" id="mCh">&ndash;</span></div>
+      <div class="ro"><span class="ro-k">Velocity</span><span class="ro-v" id="mVel">&ndash;</span></div>
+      <div class="ro"><span class="ro-k">Activity</span><span class="ro-v"><span class="led" id="mAct"></span></span></div>
+      <div class="gates" id="gates"></div>
+    </div>
+  </section>
+
+  <details class="px-details">
+    <summary>About this 4-TME</summary>
+    <div class="about" style="margin-top:12px">
+      <span id="aboutFw">Connect to see the firmware version.</span>
+      <span id="aboutFlash"></span>
+      <span>Settings, presets and the last sound live in 4-TME's W25Q64 SPI flash, so firmware updates keep them. Restart into DFU mode from the <a href="index.html#flash" data-tool>firmware&nbsp;flasher</a>.</span>
+    </div>
+  </details>
+
+  <footer class="foot">
+    <div>&copy; .axs instruments</div>
+    <div><a href="editor.html" data-tool>Sound &amp; presets</a> &middot; <a href="index.html#flash" data-tool>Update firmware</a></div>
+  </footer>
+</main>
+
+<script type="module">
+import * as T from './protocol.js';
+import { createConnection, keepDemoInLinks, makeStatus } from './app.js';
+
+const { msg, CMD, RPL, MAGIC, SETTINGS } = T;
+const $ = (id) => document.getElementById(id);
+const setStatus = makeStatus($('statusLine'));
+keepDemoInLinks();
+
+// LED levels as the firmware has them (PWM out of 255): steady, flash
+const LED_LEVELS = [[5, 25], [25, 80], [80, 150]];
+
+let settings = { ...T.SETTINGS_DEFAULTS };
+let hold = 0;              // keep our edit on screen while the reply catches up
+let lastAct = -1;
+let conn = null;
+
+function buildSeg(host, name, options, label = (o) => o) {
+  host.innerHTML = options.map((o, i) =>
+    `<label><input type="radio" name="${name}" value="${i}"><span>${label(o, i)}</span></label>`).join('');
+  host.addEventListener('change', (e) => change(name, Number(e.target.value)));
+}
+buildSeg($('segCh'), 'midiChannel', SETTINGS[0].options, (o, i) => (i ? String(i) : 'Omni'));
+buildSeg($('segLed'), 'ledLevel', SETTINGS[1].options, (o) => ({ LO: 'Low', MID: 'Mid', HI: 'High' })[o]);
+buildSeg($('segSaver'), 'saverIdx', SETTINGS[2].options, (o, i) => (i ? `${T.SAVER_MIN[i]} min` : 'Off'));
+$('valuesSw').addEventListener('change', (e) => change('showValues', e.target.checked ? 1 : 0));
+
+const gates = $('gates');
+gates.innerHTML = '<span class="ro-k">Voices</span>' + [1, 2, 3, 4].map((v) => `<span class="gate"><span class="vled" id="g${v - 1}"></span>Voice ${v}</span>`).join('');
+
+function render() {
+  for (const f of ['midiChannel', 'ledLevel', 'saverIdx']) {
+    const r = document.querySelector(`input[name="${f}"][value="${settings[f]}"]`);
+    if (r) r.checked = true;
+  }
+  $('valuesSw').checked = !!settings.showValues;
+  $('valuesText').textContent = settings.showValues ? 'On' : 'Off';
+  const [base, flash] = LED_LEVELS[settings.ledLevel];
+  $('pvLit').style.setProperty('--lvl', (base / 255 * 2.2).toFixed(3));
+  $('pvFlash').style.setProperty('--lvl', Math.min(1, (base + flash) / 255 * 2.2).toFixed(3));
+}
+
+async function change(key, value) {
+  settings = { ...settings, [key]: value };
+  render();
+  hold = performance.now() + 800;
+  try {
+    settings = T.decodeSettings(await conn.request(msg(CMD.SET_SETTINGS, ...T.encodeSettings(settings)), RPL.SETTINGS));
+    render();
+    setSave('pending', 'Saving…');
+  } catch (e) { conn.fail(e); }
+}
+
+function setSave(kind, text) {
+  $('saveLed').className = 'led' + (kind === 'ok' ? ' on' : kind === 'pending' ? ' pending' : kind === 'err' ? ' err' : '');
+  $('saveText').textContent = text;
+}
+
+let armTimer = null;
+$('resetBtn').addEventListener('click', async () => {
+  const b = $('resetBtn');
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed'); b.textContent = 'Reset: sure?';
+    armTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Reset to defaults'; }, 4000);
+    return;
+  }
+  clearTimeout(armTimer);
+  b.classList.remove('armed'); b.textContent = 'Reset to defaults';
+  try {
+    settings = T.decodeSettings(await conn.request(msg(CMD.RESET_SETTINGS, ...MAGIC.RESET), RPL.SETTINGS));
+    render();
+    setStatus('Back to the factory settings: omni, mid LEDs, values on, 5 min.', 'ok');
+  } catch (e) { conn.fail(e); }
+});
+
+conn = createConnection({
+  setStatus,
+  pollMs: 120,
+  onConnect: async (link, info) => {
+    settings = T.decodeSettings(await link.request(msg(CMD.GET_SETTINGS), RPL.SETTINGS));
+    render();
+    $('settings').disabled = false;
+    $('aboutFw').textContent = `Firmware ${info.version}, editor protocol ${info.protocol}: ${info.voices} voices x ${info.params} parameters, ${info.presets} presets.`;
+    $('aboutFlash').textContent = info.flashOk ? 'SPI flash found.' : 'No SPI flash found: settings and presets cannot be saved. Check the W25Q64 wiring.';
+  },
+  onStatus: async (st) => {
+    if (!st.flashOk) setSave('err', 'No SPI flash: changes last until power-off');
+    else if (st.settingsPending || st.flashBusy) setSave('pending', 'Saving…');
+    else setSave('ok', 'Saved on 4-TME');
+    if (performance.now() > hold && st.settingsSum !== T.checksum(T.encodeSettings(settings))) {   // changed on the panel
+      settings = T.decodeSettings(await conn.request(msg(CMD.GET_SETTINGS), RPL.SETTINGS));
+      render();
+    }
+    $('mNote').textContent = st.anyNote ? T.noteName(st.lastNote) : '–';
+    $('mCh').textContent = st.anyNote ? String(st.lastChannel + 1) : '–';
+    $('mVel').textContent = st.anyNote ? String(st.lastVelocity) : '–';
+    $('mAct').className = 'led' + (lastAct >= 0 && st.activity !== lastAct ? ' on' : '');
+    lastAct = st.activity;
+    for (let v = 0; v < 4; v++) $('g' + v).style.setProperty('--lvl', Math.max((st.gates >> v) & 1 ? 0.6 : 0, st.env[v]).toFixed(3));
+  },
+  onDisconnect: () => {
+    $('settings').disabled = true;
+    setSave('', 'Connect to see 4-TME’s settings');
+    for (const id of ['mNote', 'mCh', 'mVel']) $(id).textContent = '–';
+    $('mAct').className = 'led';
+    lastAct = -1;
+    for (let v = 0; v < 4; v++) $('g' + v).style.setProperty('--lvl', 0);
+  },
+});
+render();
+</script>
+</body>
+</html>

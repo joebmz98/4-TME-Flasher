@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4-TME Editor | .axs instruments</title>
+<link rel="preload" href="assets/fonts/alagard.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/favicon-180.png">
+<style>
+  /* Sound editor. The deck at the top is a small copy of 4-TME's panel: the
+     128x32 OLED drawn pixel for pixel like the firmware, and the four voice
+     buttons with their orange LEDs on a trace. Below: the 16 encoders of the
+     voice being edited, grouped like the synth's sections, then the presets. */
+
+  /* ---------- connection ---------- */
+  .conn { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 14px 16px; }
+  .conn-status { display: flex; align-items: center; gap: 14px; flex: 1 1 260px; min-width: 0; }
+  .conn-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .conn-title { font-family: var(--label); font-size: 16px; line-height: 1.2; text-transform: uppercase; }
+  .conn-detail { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+  .conn-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .status-line { margin: -14px 0 0; font-family: var(--label); font-size: 16px; line-height: 1.4; text-transform: uppercase; }
+  .status-line.error { padding: 10px 14px; border: 2px solid transparent; border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); text-transform: none; font-family: var(--body); }
+  .notice .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .notice .btn { border-image: var(--px-frame) 8 / 8px round; color: var(--paper); background: var(--ink); }
+  .notice .btn:hover { border-image: var(--px-fill) 8 fill / 8px round; background: var(--paper); color: var(--ink); }
+
+  /* ---------- deck ---------- */
+  .deck { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 22px; align-items: center; }
+  .screen { padding: 14px; display: flex; justify-content: center; align-items: center; }
+  .screen canvas { display: block; width: 640px; max-width: 100%; aspect-ratio: 4 / 1; height: auto; }
+  .readouts { display: flex; flex-direction: column; gap: 14px; min-width: 150px; }
+  .ro { display: flex; flex-direction: column; gap: 4px; }
+  .ro-k { font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+  .ro-v { font-family: var(--label); font-size: 32px; line-height: 1; white-space: nowrap; text-transform: uppercase; }
+  .ro-v.small { font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  @media (max-width: 640px) {
+    .deck { grid-template-columns: minmax(0, 1fr); }
+    .readouts { flex-direction: row; flex-wrap: wrap; gap: 10px 28px; min-width: 0; }
+  }
+
+  /* the four voices on a trace, like DCLK's CH1 / CH2 */
+  .voices { grid-column: 1 / -1; display: flex; align-items: flex-start; margin-top: 6px; }
+  .voices > .seg-flat { flex: 1 1 0; min-width: 8px; height: 2px; margin-top: 35px; background: var(--ink); }
+  .voices > .seg-pulses { flex: 1 1 0; min-width: 24px; height: 24px; margin-top: 13px; background: var(--wave) repeat-x left bottom; }
+  .voices > .node { flex: none; width: 8px; height: 8px; margin-top: 32px; background: var(--ink); clip-path: polygon(2px 0, 6px 0, 8px 2px, 8px 6px, 6px 8px, 2px 8px, 0 6px, 0 2px); }
+  .voice { flex: 0 0 112px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+  .ring {
+    width: 72px; height: 72px; padding: 0; border: 0; border-radius: 50%; flex: none; position: relative;
+    background: var(--ring) center / 72px 72px no-repeat; color: var(--ink);
+    display: grid; place-items: center; font-family: var(--display); font-size: 32px; line-height: 1;
+  }
+  .ring:focus-visible { outline-offset: 4px; }
+  .ring:hover { transform: translateY(-2px); }
+  .ring.sel { background-image: var(--ring-fill); color: var(--paper); }
+  .ring.grp { animation: ring-breathe 1.4s steps(1) infinite; }
+  .ring.muted .num { text-decoration: line-through; text-decoration-thickness: 3px; }
+  @keyframes ring-breathe { 0%, 49% { background-image: var(--ring); color: var(--ink); } 50%, 100% { background-image: var(--ring-fill); color: var(--paper); } }
+  .voice-row { display: flex; align-items: center; gap: 8px; }
+  .voice-name { font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+  .mute {
+    font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; color: var(--ink); background: none;
+    padding: 5px 7px 4px; border: 2px solid transparent; border-image: var(--px-dots) 8 / 8px round;
+  }
+  .mute:hover { border-image: var(--px-frame) 8 / 8px round; }
+  .mute[aria-pressed="true"] { border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+  @media (max-width: 640px) {
+    .voice { flex-basis: 70px; }
+    .ring { width: 56px; height: 56px; background-size: 56px 56px; font-size: 24px; }
+    .voices > .seg-pulses { display: none; }
+    .voices > .seg-flat { margin-top: 27px; }
+    .voices > .node { margin-top: 24px; }
+    .vw { display: none; }
+  }
+
+  .edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  .edit-bar .grow { flex: 1 1 auto; }
+  .edit-bar .what { font-family: var(--label); font-size: 16px; line-height: 1.3; text-transform: uppercase; }
+  .btn[aria-pressed="true"] { border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+
+  /* ---------- knobs ---------- */
+  .sections { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 18px; }
+  .sect { grid-column: span 6; display: flex; flex-direction: column; padding: 14px 14px 16px; min-width: 0; }
+  .sect.s-osc { grid-column: span 5; }
+  .sect.s-filter { grid-column: span 7; }
+  .sect.s-env { grid-column: span 6; }
+  .sect.s-lfo { grid-column: span 2; }
+  .sect.s-vca { grid-column: span 4; }
+  @media (max-width: 860px) {
+    .sect, .sect.s-osc, .sect.s-filter, .sect.s-env { grid-column: span 12; }
+    .sect.s-lfo { grid-column: span 4; }
+    .sect.s-vca { grid-column: span 8; }
+  }
+  @media (max-width: 520px) { .sect.s-lfo, .sect.s-vca { grid-column: span 12; } }
+  .sect-head { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-family: var(--display); font-weight: 400; font-size: 32px; line-height: 1; }
+  .sect-head::after { content: ""; flex: 1; height: 2px; background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 6px); }
+  .knobs { display: flex; flex-wrap: wrap; justify-content: space-around; align-items: flex-end; gap: 16px 4px; }
+  .knob { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 74px; text-align: center; touch-action: none; }
+  .knob canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; cursor: ns-resize; }
+  .knob.big canvas { width: 72px; height: 72px; }
+  .knob.small canvas { width: 44px; height: 44px; }
+  .knob:focus-visible { outline: 2px dashed var(--ink); outline-offset: 4px; }
+  .knob:focus { outline: none; }
+  .knob:focus-visible canvas, .knob.dragging canvas { filter: none; }
+  .k-label { font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; min-height: 32px; display: flex; align-items: flex-end; justify-content: center; }
+  .k-value { font-family: var(--mono); font-size: 22px; line-height: 1; white-space: nowrap; min-height: 22px; }
+  .knob.todo { opacity: 0.45; }
+  .knob.todo canvas { cursor: not-allowed; }
+  .knob.flash .k-value { background: var(--ink); color: var(--paper); }
+  .hint { font-size: 16px; line-height: 1.4; margin: 0; }
+
+  .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 16px; }
+  .tools .lbl { font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+  .tools .sep { flex: 1 1 12px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ---------- presets ---------- */
+  .presets { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .presets { grid-template-columns: minmax(0, 1fr); } }
+  .slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  @media (max-width: 560px) { .slots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .slot {
+    display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px 7px; text-align: left; color: var(--ink); background: none;
+    font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; white-space: nowrap;
+    border: 2px solid transparent; border-image: var(--px-dots) 8 / 8px round;
+  }
+  .slot .n { font-family: var(--mono); font-size: 22px; line-height: 0.8; opacity: 0.7; }
+  .slot .nm { overflow: hidden; text-overflow: clip; flex: 1; }
+  .slot.used { border-image: var(--px-frame) 8 / 8px round; }
+  .slot.empty .nm { opacity: 0.55; }
+  .slot:hover { border-image: var(--px-double) 12 / 12px round; }
+  .slot.sel { border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+  .slot .match { width: 8px; height: 8px; flex: none; background: currentColor; visibility: hidden; }
+  .slot.match .match { visibility: visible; }
+
+  .slot-card { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+  .slot-title { font-family: var(--display); font-size: 32px; line-height: 1; overflow-wrap: anywhere; }
+  .namebox { display: flex; gap: 6px; }
+  .namebox input {
+    width: 100%; font-family: var(--display); font-size: 32px; line-height: 1; letter-spacing: 6px; text-transform: uppercase;
+    color: var(--ink); background: var(--paper); padding: 8px 10px 6px; min-width: 0;
+    border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round;
+  }
+  .namebox input:focus { outline: none; border-image: var(--px-double) 12 / 12px round; }
+  .slot-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .slot-actions .btn { flex: 1 1 auto; }
+  .library { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 14px; border-top: 2px dotted var(--ink); }
+  .save-state { display: flex; align-items: center; gap: 10px; font-family: var(--label); font-size: 16px; line-height: 1.2; text-transform: uppercase; }
+
+  body.offline .needs-link { opacity: 0.45; pointer-events: none; }
+  body.offline .offline-only { display: block; }
+  .offline-only { display: none; }
+
+  .help ul { margin: 14px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 16px; }
+  .help li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; }
+  .help li::before { content: ""; width: 6px; height: 6px; margin: 8px 0 0 6px; background: var(--ink); }
+  kbd { font-family: var(--mono); font-size: 20px; padding: 0 4px; border: 2px solid var(--ink); }
+</style>
+</head>
+<body class="offline">
+<main class="panel wide">
+  <header class="plate">
+    <a class="back-link" href="index.html" data-tool>&lt; All&nbsp;tools</a>
+    <div class="plate-top">
+      <div class="wordmark">
+        <div class="brand">.axs instruments</div>
+        <h1><span class="logo">4-TME</span> <span class="tool-tag">Editor</span></h1>
+        <p class="logo-sub">4-Voice Poly Synth</p>
+      </div>
+    </div>
+    <div class="trace" aria-hidden="true">
+      <span class="node"></span><span class="pulses"></span>
+      <span class="flat planet-spot"><img class="planet px" src="assets/planet.svg" width="80" height="56" alt=""></span>
+      <span class="pulses short"></span><span class="flat end"></span><span class="node"></span>
+    </div>
+    <p class="sub">Every knob of all four voices and the 32 presets, live over USB. Without 4-TME connected the knobs still work on a draft you can send&nbsp;later.</p>
+  </header>
+
+  <section class="conn frame" aria-live="polite">
+    <div class="conn-status">
+      <span class="led" id="connLed"></span>
+      <div class="conn-text">
+        <span class="conn-title" id="connTitle">Not connected</span>
+        <span class="conn-detail" id="connDetail"></span>
+      </div>
+    </div>
+    <div class="conn-actions">
+      <button class="btn primary" id="connectBtn" type="button">Connect 4-TME</button>
+      <button class="btn" id="demoBtn" type="button">Try demo</button>
+      <button class="btn" id="disconnectBtn" type="button" hidden>Disconnect</button>
+    </div>
+  </section>
+  <p class="status-line" id="statusLine" role="status" hidden></p>
+
+  <div class="notice" id="draftNotice" hidden>
+    <span>You changed the sound before connecting. Send your draft to 4-TME, or keep the sound 4-TME is&nbsp;playing?
+      <span class="actions">
+        <button class="btn small" id="sendDraftBtn" type="button">Send my draft</button>
+        <button class="btn small" id="keepDeviceBtn" type="button">Keep 4-TME's sound</button>
+      </span>
+    </span>
+  </div>
+
+  <section class="deck" aria-label="Screen and voices">
+    <div class="screen frame-double">
+      <canvas class="px" id="oled" width="128" height="32" role="img" aria-label="4-TME's screen"></canvas>
+    </div>
+    <div class="readouts">
+      <div class="ro"><span class="ro-k">Editing</span><span class="ro-v" id="roWho">V1</span></div>
+      <div class="ro"><span class="ro-k">MIDI in</span><span class="ro-v" id="roNote">&ndash;</span></div>
+      <div class="ro"><span class="ro-k">Sound</span><span class="ro-v small" id="roSave"><span class="led" id="saveLed"></span><span id="saveText">Draft</span></span></div>
+    </div>
+    <div class="voices" id="voices">
+      <span class="node"></span><span class="seg-pulses"></span>
+    </div>
+  </section>
+
+  <div class="edit-bar">
+    <button class="btn" id="shiftBtn" type="button" aria-pressed="false" title="Like holding SHIFT on the panel">Shift: edit several voices</button>
+    <span class="what grow" id="editWhat">The knobs edit voice&nbsp;1.</span>
+  </div>
+
+  <div class="sections" id="sections"></div>
+
+  <div class="tools frame-dots" aria-label="Voice tools">
+    <span class="lbl" id="copyLbl">Copy voice 1 to</span>
+    <span class="seg" id="copyTo"></span>
+    <span class="sep"></span>
+    <button class="btn small" id="initVoiceBtn" type="button">Init voice</button>
+    <button class="btn small" id="randomBtn" type="button">Randomise voice</button>
+  </div>
+
+  <section aria-labelledby="hPresets">
+    <h2 class="section-head" id="hPresets">Presets</h2>
+    <p class="callout offline-only" style="margin:0 0 14px">Connect 4-TME to see, load and save its 32&nbsp;presets.</p>
+    <div class="presets needs-link">
+      <div class="slots" id="slots"></div>
+      <div class="slot-card frame-double">
+        <div class="slot-title" id="slotTitle">1. - - -</div>
+        <label class="namebox"><span class="sr" hidden>Name</span>
+          <input id="nameInput" maxlength="5" spellcheck="false" autocomplete="off" aria-label="Preset name, up to 5 characters">
+        </label>
+        <p class="hint" style="font-size:16px">Up to 5 characters: A&ndash;Z, 0&ndash;9, dash and&nbsp;space.</p>
+        <div class="slot-actions">
+          <button class="btn primary" id="loadBtn" type="button">Load</button>
+          <button class="btn" id="saveBtn" type="button">Save here</button>
+          <button class="btn danger" id="clearBtn" type="button">Clear</button>
+        </div>
+        <div class="slot-actions">
+          <button class="btn danger" id="initBtn" type="button" title="PRESETS > INIT on the panel">Init sound</button>
+        </div>
+        <div class="library">
+          <button class="btn small" id="backupBtn" type="button">Back up all (.json)</button>
+          <button class="btn small" id="restoreBtn" type="button">Restore from file</button>
+          <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <details class="px-details help">
+    <summary>How it works</summary>
+    <ul>
+      <li><span>Changes reach 4-TME as you turn a knob, and 4-TME's screen shows the value just like turning its encoder. Turning an encoder on 4-TME moves the knob&nbsp;here.</span></li>
+      <li><span>Knobs: drag up and down, scroll, or use the arrow keys (<kbd>Shift</kbd> for fine steps when dragging, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> for big ones). Double-click puts a knob back to the INIT&nbsp;value.</span></li>
+      <li><span>Click a voice to edit it (the panel's voice buttons). <strong>Shift</strong> works like holding SHIFT: click voices to choose a group, and each knob moves every voice in the group by the same amount from where it&nbsp;is.</span></li>
+      <li><span>Mute works like BACK + voice button: the voice stays in the round-robin but is&nbsp;silent.</span></li>
+      <li><span>4-TME keeps the sound it is playing through power-off by itself, two seconds after the last change. Presets are only written when you save&nbsp;one.</span></li>
+      <li><span>Presets live in 4-TME's SPI flash, so firmware updates keep them. A backup file holds every used slot with its name and all 64 values; restoring writes those slots&nbsp;back.</span></li>
+    </ul>
+  </details>
+
+  <footer class="foot">
+    <div>&copy; .axs instruments</div>
+    <div><a href="settings.html" data-tool>Settings</a> &middot; <a href="index.html#flash" data-tool>Update firmware</a></div>
+  </footer>
+</main>
+
+<script type="module">
+import * as T from './protocol.js';
+import { Oled } from './oled.js';
+import { createConnection, keepDemoInLinks, makeStatus, download } from './app.js';
+
+const { P, PARAMS, NUM_VOICES, NUM_PRESETS, msg, CMD, RPL, MAGIC } = T;
+const $ = (id) => document.getElementById(id);
+const setStatus = makeStatus($('statusLine'));
+keepDemoInLinks();
+
+// ---------------------------------------------------------------- state
+let sound = T.defaultSound();            // what 4-TME plays (or the offline draft)
+let draftEdited = false;                 // changed before connecting
+let shiftOn = false;
+let group = 0x0f;                        // voices SHIFT edits (bit per voice)
+let groupStarted = false;
+let showValues = true;                   // the VALUES setting: readout on the OLED while turning
+let presets = Array.from({ length: NUM_PRESETS }, () => ({ used: false, name: '' }));
+let presetParams = Array(NUM_PRESETS).fill(null);   // cached values, for "matches" and backups
+let presetSum = -1;
+let settingsSum = -1;
+let selSlot = 0;
+let env = [0, 0, 0, 0];
+let lastEditAt = 0;
+let lastStatus = null;
+let conn = null;
+
+const refVoice = () => {           // the voice the knobs show
+  if (!shiftOn || (group >> sound.selVoice) & 1) return sound.selVoice;
+  for (let v = 0; v < NUM_VOICES; v++) if ((group >> v) & 1) return v;
+  return sound.selVoice;
+};
+const editMask = () => (shiftOn ? group : 1 << sound.selVoice);
+const groupText = () => (group === 0x0f ? 'ALL' : [0, 1, 2, 3].filter((v) => (group >> v) & 1).map((v) => v + 1).join(''));
+const whoText = () => (shiftOn ? `S ${groupText()}` : `V${sound.selVoice + 1}`);
+
+// ---------------------------------------------------------------- OLED
+const oled = new Oled($('oled'));
+let lastFrame = performance.now();
+function tick(now) {
+  const dt = Math.min(0.2, (now - lastFrame) / 1000);
+  lastFrame = now;
+  oled.frame(dt, { params: sound.params, muteMask: sound.muteMask, env, marked: editMask(), who: whoText(), showValues });
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ---------------------------------------------------------------- knobs
+// Drawn on a small canvas at "art pixel" size and scaled up crisp, like the
+// rest of the theme. Big knobs: the panel's Moog-style knobs. Small: the
+// knobless RV09 trimmers (a disc with a screwdriver slot).
+const SWEEP = 270;
+const knobs = [];
+
+function circlePts(r) {             // midpoint circle
+  const pts = [];
+  let x = r, y = 0, err = 1 - r;
+  while (x >= y) {
+    pts.push([x, y], [y, x], [-y, x], [-x, y], [-x, -y], [-y, -x], [y, -x], [x, -y]);
+    y++;
+    if (err < 0) err += 2 * y + 1; else { x--; err += 2 * (y - x) + 1; }
+  }
+  return pts;
+}
+function drawKnob(k) {
+  const { ctx, size, big } = k;
+  const p = PARAMS[k.id];
+  const val = sound.params[refVoice()][k.id];
+  const c = size / 2;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = '#fff';
+  const dot = (x, y) => ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+  const ang = (f) => ((-SWEEP / 2 + SWEEP * f) * Math.PI) / 180;
+  const at = (a, r) => [c - 0.5 + r * Math.sin(a), c - 0.5 - r * Math.cos(a)];
+  const f = p.max ? val / p.max : 0;
+  const rArc = c - 1;
+  // value arc: ticks along the sweep, filled from the start (or the centre for +/- knobs)
+  const steps = big ? 64 : 40;
+  const from = p.bipolar ? 0.5 : 0;
+  for (let i = 0; i <= steps; i++) {
+    const g = i / steps;
+    const lit = p.max && ((g >= Math.min(from, f) - 1e-6 && g <= Math.max(from, f) + 1e-6));
+    if (lit || i % (big ? 8 : 10) === 0) dot(...at(ang(g), rArc));
+  }
+  if (big) {
+    const r = Math.round(c - 5);
+    for (const [x, y] of circlePts(r)) ctx.fillRect(c - 0.5 + x, c - 0.5 + y, 1, 1);
+    for (const [x, y] of circlePts(r - 3)) if ((x + y) & 1) ctx.fillRect(c - 0.5 + x, c - 0.5 + y, 1, 1);   // knurled skirt
+    if (p.max) {
+      const a = ang(f);
+      for (let rr = 2; rr <= r - 1; rr += 0.5) { const [x, y] = at(a, rr); dot(x, y); }
+    }
+  } else {
+    const r = Math.round(c - 4);
+    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r + r * 0.8) ctx.fillRect(c - 0.5 + x, c - 0.5 + y, 1, 1);
+    ctx.fillStyle = '#000';
+    const a = ang(f);
+    for (let rr = -r + 1; rr <= r - 1; rr += 0.5) {      // the screwdriver slot
+      const [x, y] = at(a, rr);
+      ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+  }
+}
+
+function setKnobText(k) {
+  const val = sound.params[refVoice()][k.id];
+  k.value.textContent = PARAMS[k.id].todo ? 'not yet' : T.formatParam(k.id, val);
+  k.el.setAttribute('aria-valuenow', val);
+  k.el.setAttribute('aria-valuetext', PARAMS[k.id].todo ? 'not implemented yet' : T.formatParam(k.id, val));
+}
+function renderKnobs() { for (const k of knobs) { drawKnob(k); setKnobText(k); } }
+
+function buildKnobs() {
+  const host = $('sections');
+  for (const g of T.GROUPS) {
+    const sect = document.createElement('section');
+    sect.className = `sect s-${g.key} frame`;
+    sect.setAttribute('aria-label', g.title);
+    sect.innerHTML = `<h2 class="sect-head">${g.title}</h2><div class="knobs"></div>`;
+    host.append(sect);
+    PARAMS.forEach((p, id) => {
+      if (p.group !== g.key) return;
+      const el = document.createElement('div');
+      el.className = `knob ${p.big ? 'big' : 'small'}${p.todo ? ' todo' : ''}`;
+      el.tabIndex = p.todo ? -1 : 0;
+      el.setAttribute('role', 'slider');
+      el.setAttribute('aria-label', p.name);
+      el.setAttribute('aria-valuemin', 0);
+      el.setAttribute('aria-valuemax', p.max);
+      if (p.todo) el.setAttribute('aria-disabled', 'true');
+      el.title = p.todo ? `${p.name}: not in the firmware yet` : `${p.name}. Drag, scroll or arrow keys; double-click for INIT (${T.formatParam(id, p.def)})`;
+      const size = p.big ? 36 : 22;
+      el.innerHTML = `<span class="k-label">${p.label}</span><canvas width="${size}" height="${size}"></canvas><span class="k-value"></span>`;
+      sect.querySelector('.knobs').append(el);
+      const k = { id, el, size, big: !!p.big, ctx: el.querySelector('canvas').getContext('2d'), value: el.querySelector('.k-value') };
+      knobs.push(k);
+      if (!p.todo) wireKnob(k);
+    });
+  }
+  renderKnobs();
+}
+
+function wireKnob(k) {
+  const max = PARAMS[k.id].max;
+  let drag = null;
+  k.el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    k.el.focus();
+    k.el.setPointerCapture(e.pointerId);
+    k.el.classList.add('dragging');
+    drag = { y: e.clientY, start: sound.params[refVoice()][k.id], acc: 0 };
+    e.preventDefault();
+  });
+  k.el.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const pxPerFullTurn = e.shiftKey ? 900 : 220;
+    const target = drag.start + Math.round(((drag.y - e.clientY) / pxPerFullTurn) * Math.max(max, 24));
+    turn(k.id, target - sound.params[refVoice()][k.id]);
+  });
+  const end = () => { drag = null; k.el.classList.remove('dragging'); };
+  k.el.addEventListener('pointerup', end);
+  k.el.addEventListener('pointercancel', end);
+  k.el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    turn(k.id, e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
+  k.el.addEventListener('keydown', (e) => {
+    const d = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key];
+    if (d) { turn(k.id, d); e.preventDefault(); }
+    else if (e.key === 'Home') { turn(k.id, -9999); e.preventDefault(); }
+    else if (e.key === 'End') { turn(k.id, 9999); e.preventDefault(); }
+  });
+  k.el.addEventListener('dblclick', () => turn(k.id, PARAMS[k.id].def - sound.params[refVoice()][k.id]));
+}
+
+// Move a knob by `delta` clicks: the edited voice, or every voice in the SHIFT
+// group by the same amount from where each one is (like the panel).
+function turn(id, delta) {
+  if (!delta) return;
+  const changed = [];
+  for (let v = 0; v < NUM_VOICES; v++) {
+    if (!((editMask() >> v) & 1)) continue;
+    const nv = T.clampParam(id, sound.params[v][id] + delta);
+    if (nv !== sound.params[v][id]) { sound.params[v][id] = nv; changed.push(v); }
+  }
+  if (!changed.length) return;
+  lastEditAt = performance.now();
+  oled.showParam(id, refVoice());
+  const k = knobs.find((x) => x.id === id);
+  drawKnob(k); setKnobText(k);
+  if (conn && conn.connected) queueParam(id, changed);
+  else { draftEdited = true; showSave(); }
+  updateMatches();
+}
+
+// ---------------------------------------------------------------- sending, latest value wins
+const pending = new Map();      // "id" -> Set of voices
+let sending = false;
+function queueParam(id, voices) {
+  const s = pending.get(id) || new Set();
+  voices.forEach((v) => s.add(v));
+  pending.set(id, s);
+  pump();
+}
+async function pump() {
+  if (sending) return;
+  sending = true;
+  try {
+    while (pending.size && conn && conn.connected) {
+      const [id, voices] = pending.entries().next().value;
+      pending.delete(id);
+      // voices that share a value go in one message
+      const byValue = new Map();
+      for (const v of voices) {
+        const x = sound.params[v][id];
+        byValue.set(x, (byValue.get(x) || 0) | (1 << v));
+      }
+      for (const [x, mask] of byValue) {
+        await conn.request(msg(CMD.SET_PARAM, mask, id, T.lo7(x), T.hi7(x)), RPL.PARAM);
+      }
+    }
+  } catch (e) {
+    conn && conn.fail(e);
+  } finally {
+    sending = false;
+  }
+}
+
+async function sendSound() {
+  lastEditAt = performance.now();
+  const r = await conn.request(msg(CMD.SET_SOUND, ...T.encodeSound(sound)), RPL.SOUND);
+  sound = T.decodeSound(r);
+  renderAll();
+}
+
+// ---------------------------------------------------------------- voices
+const voiceEls = [];
+function buildVoices() {
+  const host = $('voices');
+  for (let v = 0; v < NUM_VOICES; v++) {
+    const el = document.createElement('div');
+    el.className = 'voice';
+    el.innerHTML = `<button class="ring" type="button" aria-label="Voice ${v + 1}"><span class="num">${v + 1}</span></button>
+      <span class="voice-row"><span class="vled" aria-hidden="true"></span><span class="voice-name"><span class="vw">Voice </span>${v + 1}</span></span>
+      <button class="mute" type="button" aria-pressed="false" title="BACK + voice button on the panel">Mute</button>`;
+    host.append(el);
+    if (v < NUM_VOICES - 1) host.insertAdjacentHTML('beforeend', '<span class="seg-flat"></span>');
+    const ring = el.querySelector('.ring'), mute = el.querySelector('.mute'), led = el.querySelector('.vled');
+    voiceEls.push({ ring, mute, led });
+    ring.addEventListener('click', (e) => onVoice(v, e.shiftKey));
+    mute.addEventListener('click', () => setVoices(sound.selVoice, sound.muteMask ^ (1 << v)));
+  }
+  host.insertAdjacentHTML('beforeend', '<span class="seg-pulses"></span><span class="node"></span>');
+}
+
+function onVoice(v, shiftClick) {
+  if (shiftOn || shiftClick) {
+    if (!shiftOn) { shiftOn = true; groupStarted = false; }
+    if (!groupStarted) { group = 1 << v; groupStarted = true; }       // first press: a new group
+    else { const g = group ^ (1 << v); if (g) group = g; }            // then add / remove, never empty
+    renderAll();
+    return;
+  }
+  setVoices(v, sound.muteMask);
+}
+
+async function setVoices(sel, muteMask) {
+  sound.selVoice = sel;
+  sound.muteMask = muteMask & 0x0f;
+  renderAll();
+  if (conn && conn.connected) {
+    lastEditAt = performance.now();
+    try {
+      const r = await conn.request(msg(CMD.SET_VOICES, sel, sound.muteMask), RPL.VOICES);
+      sound.selVoice = r[0]; sound.muteMask = r[1];
+      renderAll();
+    } catch (e) { conn.fail(e); }
+  } else draftEdited = true;
+}
+
+$('shiftBtn').addEventListener('click', () => {
+  shiftOn = !shiftOn;
+  groupStarted = false;
+  renderAll();
+});
+
+function renderVoices() {
+  for (let v = 0; v < NUM_VOICES; v++) {
+    const { ring, mute } = voiceEls[v];
+    const inGroup = shiftOn && (group >> v) & 1;
+    ring.classList.toggle('sel', !shiftOn && v === sound.selVoice);
+    ring.classList.toggle('grp', !!inGroup);
+    ring.classList.toggle('muted', !!((sound.muteMask >> v) & 1));
+    ring.setAttribute('aria-pressed', String(shiftOn ? !!inGroup : v === sound.selVoice));
+    mute.setAttribute('aria-pressed', String(!!((sound.muteMask >> v) & 1)));
+    mute.textContent = (sound.muteMask >> v) & 1 ? 'Muted' : 'Mute';
+  }
+  $('shiftBtn').setAttribute('aria-pressed', String(shiftOn));
+  $('roWho').textContent = whoText();
+  const list = [0, 1, 2, 3].filter((v) => (group >> v) & 1).map((v) => v + 1);
+  $('editWhat').textContent = shiftOn
+    ? `Click voices to choose the group. The knobs move ${group === 0x0f ? 'all four voices' : 'voice' + (list.length > 1 ? 's ' : ' ') + list.join(' + ')} together.`
+    : `The knobs edit voice ${sound.selVoice + 1}. Shift-click a voice to edit several.`;
+  $('copyLbl').textContent = `Copy voice ${refVoice() + 1} to`;
+  $('initVoiceBtn').textContent = shiftOn ? 'Init group' : 'Init voice';
+  $('randomBtn').textContent = shiftOn ? 'Randomise group' : 'Randomise voice';
+}
+
+// voice LEDs: the panel's rule. Lit voice: steady, rising with its envelope.
+// Unlit: dark, rising with its envelope. Muted voices don't flash.
+function renderLeds() {
+  for (let v = 0; v < NUM_VOICES; v++) {
+    const lit = shiftOn ? (group >> v) & 1 : v === sound.selVoice;
+    const e = (sound.muteMask >> v) & 1 ? 0 : env[v];
+    voiceEls[v].led.style.setProperty('--lvl', Math.min(1, (lit ? 0.35 : 0) + e * 0.65).toFixed(3));
+  }
+}
+setInterval(renderLeds, 50);
+
+// ---------------------------------------------------------------- voice tools
+function buildCopy() {
+  const seg = $('copyTo');
+  for (const [label, mask] of [['1', 1], ['2', 2], ['3', 4], ['4', 8], ['All', 15]]) {
+    const b = document.createElement('button');
+    b.className = 'btn small'; b.type = 'button'; b.textContent = label;
+    b.addEventListener('click', () => {
+      const src = refVoice();
+      const target = mask & ~(1 << src);
+      if (!target) return setStatus('That is the voice being edited.');
+      for (let v = 0; v < NUM_VOICES; v++) if ((target >> v) & 1) sound.params[v] = [...sound.params[src]];
+      afterBulk(`Copied voice ${src + 1} to ${label === 'All' ? 'every voice' : 'voice ' + label}.`);
+    });
+    seg.append(b);
+  }
+}
+
+function forEditVoices(fn) { for (let v = 0; v < NUM_VOICES; v++) if ((editMask() >> v) & 1) fn(v); }
+
+$('initVoiceBtn').addEventListener('click', () => {
+  forEditVoices((v) => { sound.params[v] = [...T.PARAM_DEFAULTS]; });
+  afterBulk(shiftOn ? 'Group back to the INIT sound.' : `Voice ${sound.selVoice + 1} back to the INIT sound.`);
+});
+
+// Random but playable: level, pan and tuning stay sensible.
+const rnd = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+const maybe = (p, a, b) => (Math.random() < p ? a() : b);
+$('randomBtn').addEventListener('click', () => {
+  forEditVoices((v) => {
+    const p = sound.params[v];
+    p[P.tune] = maybe(0.25, () => 120 + [-120, -70, -50, 50, 70, 120][rnd(0, 5)], 120);
+    p[P.wave] = rnd(0, 150);
+    p[P.pitchEnv] = maybe(0.25, () => rnd(30, 96), 48);
+    p[P.pitchLfo] = maybe(0.3, () => rnd(5, 40), 0);
+    p[P.cutoff] = rnd(35, 98);
+    p[P.res] = rnd(0, 75);
+    p[P.fltEnv] = rnd(40, 90);
+    p[P.fltLfo] = maybe(0.4, () => rnd(5, 45), 0);
+    p[P.attack] = maybe(0.6, () => rnd(0, 30), rnd(30, 75));
+    p[P.decay] = rnd(25, 80);
+    p[P.sustain] = rnd(0, 100);
+    p[P.release] = rnd(25, 80);
+    p[P.lfoRate] = rnd(20, 80);
+    p[P.pan] = rnd(20, 80);
+    p[P.level] = rnd(65, 90);
+  });
+  afterBulk('Rolled the dice.');
+});
+
+async function afterBulk(text) {
+  renderAll();
+  if (conn && conn.connected) {
+    try { await sendSound(); } catch (e) { return conn.fail(e); }
+  } else { draftEdited = true; showSave(); }
+  oled.showToast('SOUND', text.startsWith('Rolled') ? 'RANDOM' : text.startsWith('Copied') ? 'COPIED' : 'INIT');
+  setStatus(text, 'ok');
+}
+
+// ---------------------------------------------------------------- presets
+const slotEls = [];
+function buildSlots() {
+  const host = $('slots');
+  for (let i = 0; i < NUM_PRESETS; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'slot empty';
+    b.innerHTML = `<span class="n">${String(i + 1).padStart(2, '0')}</span><span class="nm">- - -</span><span class="match" title="The sound matches this preset"></span>`;
+    b.addEventListener('click', () => { selSlot = i; disarm(); renderSlots(true); });
+    b.addEventListener('dblclick', () => { if (presets[i].used) loadSlot(i); });
+    host.append(b);
+    slotEls.push(b);
+  }
+}
+
+function updateMatches() {
+  const sum = T.paramsSum(sound.params);
+  presetParams.forEach((pp, i) => {
+    const same = !!pp && presets[i].used && T.paramsSum(pp) === sum && JSON.stringify(pp) === JSON.stringify(sound.params);
+    slotEls[i].classList.toggle('match', same);
+  });
+}
+
+function renderSlots(fillName = false) {
+  presets.forEach((p, i) => {
+    const el = slotEls[i];
+    el.classList.toggle('used', p.used);
+    el.classList.toggle('empty', !p.used);
+    el.classList.toggle('sel', i === selSlot);
+    el.querySelector('.nm').textContent = p.used ? T.trimName(p.name) || '(blank)' : '- - -';
+    el.setAttribute('aria-label', `Preset ${i + 1}: ${p.used ? T.trimName(p.name) : 'empty'}`);
+  });
+  const p = presets[selSlot];
+  $('slotTitle').textContent = T.slotText(selSlot, p);
+  if (fillName) $('nameInput').value = p.used ? T.trimName(p.name) : 'NEW';
+  $('loadBtn').disabled = !p.used;
+  $('clearBtn').disabled = !p.used;
+  if (!armed) $('saveBtn').textContent = p.used ? 'Overwrite' : 'Save here';
+  updateMatches();
+}
+
+$('nameInput').addEventListener('input', (e) => {
+  const v = e.target.value.toUpperCase().replace(/[^A-Z0-9\- ]/g, '').slice(0, 5);
+  if (v !== e.target.value) e.target.value = v;
+});
+$('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('saveBtn').click(); });
+
+// Destructive buttons need a second click within 4 s.
+let armed = null, armTimer = null;
+const ARM_TEXT = { saveBtn: 'Overwrite?', clearBtn: 'Clear: sure?', initBtn: 'Init: sure?' };
+function arm(id) {
+  if (armed === id) { disarm(); return true; }
+  disarm();
+  armed = id;
+  const b = $(id);
+  b.dataset.text = b.textContent;
+  b.textContent = ARM_TEXT[id];
+  b.classList.add('armed');
+  armTimer = setTimeout(disarm, 4000);
+  return false;
+}
+function disarm() {
+  clearTimeout(armTimer);
+  if (armed) { const b = $(armed); b.textContent = b.dataset.text; b.classList.remove('armed'); }
+  armed = null;
+}
+
+async function loadSlot(i) {
+  try {
+    const r = await conn.patient(msg(CMD.LOAD_PRESET, i), RPL.SOUND);
+    lastEditAt = performance.now();
+    sound = T.decodeSound(r);
+    renderAll();
+    oled.showToast('LOADED', T.slotText(i, presets[i]));
+    setStatus(`Loaded ${T.slotText(i, presets[i])}.`, 'ok');
+  } catch (e) { report(e); }
+}
+$('loadBtn').addEventListener('click', () => { disarm(); loadSlot(selSlot); });
+
+$('saveBtn').addEventListener('click', async () => {
+  if (presets[selSlot].used && !arm('saveBtn')) return;
+  disarm();
+  const name = T.cleanName($('nameInput').value || 'NEW');
+  try {
+    const r = await conn.patient(msg(CMD.SAVE_PRESET, selSlot, ...T.nameBytes(name)), RPL.PRESETS);
+    setPresetList(T.decodePresetList(r));
+    presetParams[selSlot] = sound.params.map((x) => [...x]);
+    renderSlots(true);
+    oled.showToast('SAVED', T.slotText(selSlot, presets[selSlot]));
+    setStatus(`Saved as ${T.slotText(selSlot, presets[selSlot])}.`, 'ok');
+  } catch (e) { report(e); }
+});
+
+$('clearBtn').addEventListener('click', async () => {
+  if (!arm('clearBtn')) return;
+  try {
+    const r = await conn.patient(msg(CMD.CLEAR_PRESET, selSlot, ...MAGIC.CLEAR), RPL.PRESETS);
+    setPresetList(T.decodePresetList(r));
+    presetParams[selSlot] = null;
+    renderSlots(true);
+    oled.showToast('CLEARED', `${selSlot + 1}. - - -`);
+    setStatus(`Preset ${selSlot + 1} cleared.`, 'ok');
+  } catch (e) { report(e); }
+});
+
+$('initBtn').addEventListener('click', async () => {
+  if (!arm('initBtn')) return;
+  try {
+    lastEditAt = performance.now();
+    sound = T.decodeSound(await conn.request(msg(CMD.INIT_SOUND, ...MAGIC.INIT), RPL.SOUND));
+    renderAll();
+    oled.showToast('INIT', 'DEFAULT SOUND');
+    setStatus('Every voice is back to the INIT sound.', 'ok');
+  } catch (e) { report(e); }
+});
+
+function setPresetList(list) {
+  presets = list;
+  presetSum = T.checksum(T.encodePresetList(list));
+}
+
+async function fetchPresets({ values = true } = {}) {
+  setPresetList(T.decodePresetList(await conn.request(msg(CMD.GET_PRESETS), RPL.PRESETS)));
+  if (values) {
+    for (let i = 0; i < NUM_PRESETS; i++) {
+      if (!presets[i].used) { presetParams[i] = null; continue; }
+      const pr = T.decodePreset(await conn.patient(msg(CMD.GET_PRESET, i), RPL.PRESET));
+      presetParams[i] = pr.used ? pr.params : null;
+    }
+  }
+  renderSlots(true);
+}
+
+// ---- backup and restore: readable JSON, values by name ----
+const toVoices = (params) => params.map((pv) => Object.fromEntries(PARAMS.map((p, id) => [p.key, pv[id]])));
+const fromVoices = (voices) => Array.from({ length: NUM_VOICES }, (_, v) => PARAMS.map((p, id) => T.clampParam(id, voices[v] && voices[v][p.key] !== undefined ? voices[v][p.key] : p.def)));
+
+$('backupBtn').addEventListener('click', async () => {
+  try {
+    setStatus('Reading every preset from 4-TME…');
+    await fetchPresets();
+    const out = presets.map((p, i) => (p.used ? { slot: i + 1, name: T.trimName(p.name), voices: toVoices(presetParams[i]) } : null)).filter(Boolean);
+    const file = { format: '4-TME presets', version: 1, firmware: conn.info.version, exported: new Date().toISOString(), presets: out };
+    download(`4-tme-presets-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(file, null, 1));
+    setStatus(`Saved a backup of ${out.length} preset${out.length === 1 ? '' : 's'}.`, 'ok');
+  } catch (e) { report(e); }
+});
+
+$('restoreBtn').addEventListener('click', () => $('restoreFile').click());
+$('restoreFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== '4-TME presets' || !Array.isArray(data.presets)) throw new Error('That file is not a 4-TME preset backup.');
+    const items = data.presets
+      .filter((p) => Number.isInteger(p.slot) && p.slot >= 1 && p.slot <= NUM_PRESETS && Array.isArray(p.voices))
+      .map((p) => ({ slot: p.slot - 1, name: T.cleanName(p.name), params: fromVoices(p.voices) }));
+    if (!items.length) throw new Error('No presets found in that file.');
+    const over = items.filter((it) => presets[it.slot].used).map((it) => T.slotText(it.slot, presets[it.slot]));
+    const ask = `Write ${items.length} preset${items.length === 1 ? '' : 's'} from ${file.name} to 4-TME?` +
+      (over.length ? `\n\nThis replaces: ${over.join(', ')}.` : '\n\nOnly empty slots are used.');
+    if (!confirm(ask)) return;
+    let n = 0;
+    for (const it of items) {
+      setStatus(`Writing ${++n} of ${items.length}: ${T.slotText(it.slot, { used: true, name: it.name })}`);
+      const r = await conn.patient(msg(CMD.WRITE_PRESET, it.slot, ...T.nameBytes(it.name), ...T.encodeParams(it.params)), RPL.PRESETS, { tries: 40, wait: 60 });
+      setPresetList(T.decodePresetList(r));
+      presetParams[it.slot] = it.params;
+      renderSlots();
+    }
+    renderSlots(true);
+    setStatus(`Restored ${items.length} preset${items.length === 1 ? '' : 's'}.`, 'ok');
+  } catch (err) { report(err); }
+});
+
+function report(e) {
+  if (e && e.timeout) return conn.fail(e);
+  setStatus((e && e.message) || String(e), 'error');
+}
+
+// ---------------------------------------------------------------- save state readout
+function showSave() {
+  const led = $('saveLed'), text = $('saveText');
+  if (!conn || !conn.connected) {
+    led.className = 'led';
+    text.textContent = draftEdited ? 'Draft, edited' : 'Draft';
+    return;
+  }
+  const st = lastStatus;
+  if (st && !st.flashOk) { led.className = 'led err'; text.textContent = 'Not saved: no flash'; }
+  else if (pending.size || sending || (st && (st.soundPending || st.flashBusy))) { led.className = 'led pending'; text.textContent = 'Saving…'; }
+  else { led.className = 'led on'; text.textContent = 'Kept on 4-TME'; }
+}
+
+// ---------------------------------------------------------------- connection
+let draftCopy = null;
+conn = createConnection({
+  setStatus,
+  onConnect: async (link) => {
+    draftCopy = draftEdited ? JSON.parse(JSON.stringify(sound)) : null;
+    const req = (f, r) => link.request(f, r);
+    sound = T.decodeSound(await req(msg(CMD.GET_SOUND), RPL.SOUND));
+    const s = T.decodeSettings(await req(msg(CMD.GET_SETTINGS), RPL.SETTINGS));
+    showValues = !!s.showValues;
+    settingsSum = T.checksum(T.encodeSettings(s));
+    setPresetList(T.decodePresetList(await req(msg(CMD.GET_PRESETS), RPL.PRESETS)));
+    selSlot = Math.max(0, presets.findIndex((p) => p.used));
+    renderAll();
+    renderSlots(true);
+    $('draftNotice').hidden = !draftCopy;
+    fetchPresets().catch(report);     // values for the "matches" dots, in the background
+  },
+  onStatus: async (st) => {
+    lastStatus = st;
+    env = st.env;
+    $('roNote').textContent = st.anyNote ? T.noteName(st.lastNote) : '–';
+    showSave();
+    const idle = !pending.size && !sending && performance.now() - lastEditAt > 600;
+    if (idle && st.soundSum !== T.soundSum(sound)) {          // changed on the panel
+      const before = sound;
+      sound = T.decodeSound(await conn.request(msg(CMD.GET_SOUND), RPL.SOUND));
+      const v = sound.selVoice;
+      const id = PARAMS.findIndex((_, i) => before.params[v][i] !== sound.params[v][i]);
+      if (id >= 0) { oled.showParam(id, v); const k = knobs.find((x) => x.id === id); if (k) flashKnob(k); }
+      renderAll();
+    }
+    if (st.presetSum !== presetSum && !st.flashBusy) await fetchPresets({ values: false });
+    if (st.settingsSum !== settingsSum) {
+      const s = T.decodeSettings(await conn.request(msg(CMD.GET_SETTINGS), RPL.SETTINGS));
+      showValues = !!s.showValues;
+      settingsSum = T.checksum(T.encodeSettings(s));
+    }
+  },
+  onDisconnect: () => {
+    pending.clear();
+    env = [0, 0, 0, 0];
+    lastStatus = null;
+    draftEdited = false;
+    $('draftNotice').hidden = true;
+    $('roNote').textContent = '–';
+    disarm();
+    showSave();
+  },
+});
+
+$('sendDraftBtn').addEventListener('click', async () => {
+  $('draftNotice').hidden = true;
+  if (!draftCopy) return;
+  sound = draftCopy; draftCopy = null;
+  try { await sendSound(); setStatus('Your draft is on 4-TME now.', 'ok'); } catch (e) { report(e); }
+});
+$('keepDeviceBtn').addEventListener('click', () => { $('draftNotice').hidden = true; draftCopy = null; });
+
+function flashKnob(k) {
+  k.el.classList.add('flash');
+  setTimeout(() => k.el.classList.remove('flash'), 400);
+}
+
+function renderAll() {
+  renderKnobs();
+  renderVoices();
+  renderLeds();
+  updateMatches();
+  showSave();
+}
+
+buildVoices();
+buildKnobs();
+buildCopy();
+buildSlots();
+renderSlots(true);
+renderAll();
+</script>
+</body>
+</html>

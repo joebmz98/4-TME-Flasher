@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4-TME Tools | .axs instruments</title>
+  <link rel="preload" href="assets/fonts/alagard.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/favicon-180.png">
+  <style>
+    /* Start screen + flasher. Shared look lives in theme.css. */
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+    /* ---------- tool chooser ---------- */
+    .chooser { display: flex; flex-direction: column; gap: 14px; }
+    .chooser-intro { margin: 0; font-size: 16px; }
+    .tool {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center;
+      padding: 18px 20px; text-decoration: none; color: var(--ink);
+      border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round;
+    }
+    .tool:hover, .tool:focus-visible { border-image: var(--px-double) 12 / 12px round; }
+    .tool-icon { width: 48px; height: 48px; display: grid; place-items: center; border: 2px solid transparent; border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+    .tool-icon svg { width: 32px; height: 32px; display: block; }
+    .tool-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .tool-name { font-family: var(--display); font-size: 32px; line-height: 1; }
+    .tool-desc { font-size: 16px; line-height: 1.4; }
+    .tool-meta { font-family: var(--label); font-size: 16px; line-height: 1.2; text-transform: uppercase; margin-top: 4px; }
+    .tool-chev { font-family: var(--label); font-size: 32px; line-height: 1; }
+    .tool:hover .tool-chev, .tool:focus-visible .tool-chev { animation: nudge 0.6s steps(2) infinite; }
+    @keyframes nudge { 50% { transform: translateX(4px); } }
+    @media (max-width: 560px) {
+      .tool { grid-template-columns: minmax(0, 1fr) auto; padding: 16px 14px; gap: 12px; }
+      .tool-icon { display: none; }
+    }
+
+    /* ---------- flasher ---------- */
+    .flasher { display: flex; flex-direction: column; gap: 28px; }
+    .flasher .back-link { margin-bottom: -10px; }
+    .or { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; padding: 14px 16px; }
+    .or p { margin: 0; font-size: 16px; }
+    .or .btn { align-self: flex-start; }
+    .or .status-text { text-align: left; }
+    .hint-small { font-size: 16px; margin: 0; }
+
+    .steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+    .steps li { counter-increment: step; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .steps li::before {
+      content: counter(step, decimal-leading-zero);
+      font-family: var(--label); font-size: 16px; line-height: 1; text-align: center;
+      padding: 6px 0 5px; border: 2px solid transparent; border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper);
+    }
+    .steps small { display: block; font-size: 16px; margin-top: 6px; padding-left: 12px; border-left: 2px dotted var(--ink); }
+
+    .action-area { display: flex; flex-direction: column; gap: 20px; padding: 22px; }
+    @media (max-width: 560px) { .action-area { padding: 16px 12px; } }
+    fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+    legend { padding: 0; margin-bottom: 10px; font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+
+    .choice {
+      display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; cursor: pointer;
+      border: 2px solid transparent; border-image: var(--px-dots) 8 / 8px round;
+    }
+    .choice:hover { border-image: var(--px-frame) 8 / 8px round; }
+    .choice:has(input:checked) { border-image: var(--px-double) 12 / 12px round; }
+    .choice input { margin-top: 3px; }
+    .choice-name { font-weight: 600; }
+    .choice .hint { display: block; font-size: 16px; }
+
+    .custom-fields { display: none; flex-direction: column; gap: 10px; padding: 4px 0 0; }
+    .custom-fields.visible { display: flex; }
+    .custom-fields input[type="file"] { font: 16px var(--body); color: var(--ink); max-width: 100%; }
+    .custom-fields input[type="file"]::file-selector-button {
+      font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; color: var(--ink); background: none; cursor: pointer;
+      margin-right: 12px; padding: 10px 14px 9px; border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round;
+    }
+    .custom-fields input[type="file"]::file-selector-button:hover { border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+    .addr-row { display: none; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .addr-row.visible { display: flex; }
+    .addr-row label { font-size: 16px; }
+    #addrInput { width: 150px; }
+
+    .image-info { font-family: var(--mono); font-size: 22px; line-height: 1.2; min-height: 1.2em; }
+    .image-info .warn { display: block; margin-top: 8px; font-family: var(--body); font-size: 16px; padding: 8px 12px; border: 2px solid transparent; border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); }
+
+    .options { display: flex; flex-wrap: wrap; gap: 10px 26px; font-size: 16px; }
+    .options label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+
+    .flash-row { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0; }
+
+    .progress { width: 100%; height: 24px; padding: 4px; visibility: hidden; border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round; }
+    .progress.visible { visibility: visible; }
+    .progress-bar {
+      height: 100%; width: 0; transition: width 0.15s steps(4);
+      background: repeating-linear-gradient(90deg, var(--ink) 0 8px, transparent 8px 12px);
+    }
+
+    .status-text { font-family: var(--label); font-size: 16px; line-height: 1.4; text-transform: uppercase; text-align: center; max-width: 52ch; }
+    .status-text.ok { padding: 10px 14px; border: 2px solid transparent; border-image: var(--px-double) 12 / 12px round; }
+    .status-text.error { padding: 10px 14px; border: 2px solid transparent; border-image: var(--px-fill) 8 fill / 8px round; color: var(--paper); text-transform: none; font-family: var(--body); }
+
+    .console-container { width: 100%; }
+    .console-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .console-title { font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase; }
+    .console-box {
+      padding: 12px 14px; height: 220px; overflow-y: auto;
+      font-family: var(--mono); font-size: 20px; line-height: 1.15; white-space: pre-wrap; word-break: break-all;
+      border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round;
+      scrollbar-color: var(--ink) var(--paper);
+    }
+    #videoLink { align-self: center; }
+
+    details.px-details h3 { font-family: var(--label); font-weight: 400; font-size: 16px; line-height: 1.3; text-transform: uppercase; margin: 22px 0 6px; }
+    details.px-details p { margin: 0; font-size: 16px; }
+  </style>
+</head>
+<body>
+
+  <main class="panel">
+    <header class="plate">
+      <div class="plate-top">
+        <div class="wordmark">
+          <div class="brand">.axs instruments</div>
+          <h1><span class="logo">4-TME</span></h1>
+          <p class="logo-sub">4-Voice Poly Synth</p>
+        </div>
+      </div>
+      <div class="trace" aria-hidden="true">
+        <span class="node"></span><span class="pulses"></span>
+        <span class="flat planet-spot"><img class="planet px" src="assets/planet.svg" width="80" height="56" alt=""></span>
+        <span class="pulses short"></span><span class="flat end"></span><span class="node"></span>
+      </div>
+      <p class="sub" id="subtitle">Firmware updates and settings over&nbsp;USB</p>
+      <div class="badges">
+        <span class="chip">Daisy Seed &middot; STM32H750</span>
+        <span class="chip" id="versionBadge">Firmware: loading&hellip;</span>
+      </div>
+    </header>
+
+    <nav class="chooser" id="chooser" aria-label="Choose a tool">
+      <h2 class="section-head">Choose a tool</h2>
+      <a class="tool" href="editor.html" data-tool>
+        <span class="tool-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor"><path d="M5 0h6v1h-6zM3 1h2v1h-2zM11 1h2v1h-2zM2 2h1v1h-1zM13 2h1v1h-1zM1 3h1v2h-1zM14 3h1v2h-1zM0 5h1v6h-1zM15 5h1v6h-1zM1 11h1v2h-1zM14 11h1v2h-1zM2 13h1v1h-1zM13 13h1v1h-1zM3 14h2v1h-2zM11 14h2v1h-2zM5 15h6v1h-6zM7 3h2v6h-2z"/></svg>
+        </span>
+        <span class="tool-text">
+          <span class="tool-name">Sound &amp; presets</span>
+          <span class="tool-desc">Every knob of all four voices, with a live copy of the OLED. Load, save, name and clear the 32 presets, and back them up to a&nbsp;file.</span>
+          <span class="tool-meta">Web Serial &middot; firmware v16 or&nbsp;later</span>
+        </span>
+        <span class="tool-chev" aria-hidden="true">&gt;</span>
+      </a>
+      <a class="tool" href="settings.html" data-tool>
+        <span class="tool-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor"><path d="M1 3h8v2h-8zM13 3h2v2h-2zM9 1h4v6h-4zM1 11h2v2h-2zM7 11h8v2h-8zM3 9h4v6h-4z"/></svg>
+        </span>
+        <span class="tool-text">
+          <span class="tool-name">Settings</span>
+          <span class="tool-desc">MIDI channel, LED brightness, value readout and screen timeout, plus a MIDI in&nbsp;monitor.</span>
+          <span class="tool-meta">Web Serial &middot; firmware v16 or&nbsp;later</span>
+        </span>
+        <span class="tool-chev" aria-hidden="true">&gt;</span>
+      </a>
+      <a class="tool" href="#flash">
+        <span class="tool-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor"><path d="M7 1h2v8h2v-2h2v2h-1v1h-1v1h-1v1h-1v1h-2v-1h-1v-1h-1v-1h-1v-1h-1v-1h2v2h2zM2 13h12v2h-12z"/></svg>
+        </span>
+        <span class="tool-text">
+          <span class="tool-name">Update firmware</span>
+          <span class="tool-desc">Install the latest 4-TME release, or your own build, with the Daisy Seed in DFU&nbsp;mode.</span>
+          <span class="tool-meta">WebUSB &middot; <span id="chooserVersion">latest release</span></span>
+        </span>
+        <span class="tool-chev" aria-hidden="true">&gt;</span>
+      </a>
+      <p class="chooser-intro">All three need Chrome or Edge on a computer and a micro&#8209;USB data cable into the Daisy&nbsp;Seed.</p>
+    </nav>
+
+    <div id="flasherView" class="flasher" hidden>
+    <a class="back-link" href="#" id="backLink">&lt; All&nbsp;tools</a>
+
+    <div class="notice">
+      <span><strong>Requirements:</strong> Chrome or Edge on a computer (WebUSB is not available in Firefox, Safari or on phones). On Windows the bootloader may need a one time driver change, see Troubleshooting&nbsp;below.</span>
+    </div>
+
+    <section>
+      <h2 class="section-head">How to flash</h2>
+      <ol class="steps">
+        <li><span>Connect the Daisy Seed's micro&#8209;USB port straight to the computer (not a hub) with a data&nbsp;cable.</span></li>
+        <li><span>Put the Seed into DFU mode: <strong>hold BOOT</strong>, tap <strong>RESET</strong>, then let go of&nbsp;BOOT.
+          <small>4-TME goes silent and the OLED and LEDs stop. With firmware v16 or later running you can skip the buttons: use <strong>Restart 4-TME into DFU mode</strong> below&nbsp;instead.</small></span></li>
+        <li><span>Choose the firmware, click <strong>Flash Firmware</strong> and pick <strong>DFU in FS Mode</strong> in the&nbsp;popup.</span></li>
+        <li><span>Wait for <strong>Done</strong>. 4-TME restarts by itself. If it does not, press <strong>RESET</strong>&nbsp;once.
+          <small>Your presets, settings and last sound are kept: they live in 4-TME's W25Q64 SPI flash, which the flasher never&nbsp;touches.</small></span></li>
+      </ol>
+      <div class="or frame-dots">
+        <p>Running firmware v16 or later? Skip the buttons:</p>
+        <button class="btn" id="dfuOverUsbBtn" type="button">Restart 4-TME into DFU mode</button>
+        <p class="hint-small">Pick 4-TME's USB serial port in the popup. It restarts as <em>DFU in FS Mode</em>, ready to&nbsp;flash.</p>
+        <div id="dfuStatus" class="status-text" hidden></div>
+      </div>
+    </section>
+
+    <div class="action-area frame-double">
+      <fieldset>
+        <legend>Firmware</legend>
+        <label class="choice">
+          <input class="px-radio" type="radio" name="source" value="release" checked>
+          <span><span class="choice-name" id="releaseLabel">Latest release</span>
+            <span class="hint">Downloaded from this&nbsp;site</span></span>
+        </label>
+        <label class="choice">
+          <input class="px-radio" type="radio" name="source" value="custom">
+          <span><span class="choice-name">Custom file</span>
+            <span class="hint">A .bin or .hex from <em>Sketch &rsaquo; Export Compiled Binary</em> with the Daisy Seed board. Internal flash only, up to 128&nbsp;KB.</span></span>
+        </label>
+        <div class="custom-fields" id="customFields">
+          <input type="file" id="fileInput" accept=".hex,.bin,.ihex">
+          <div class="addr-row" id="addrRow">
+            <label for="addrInput">.bin start address</label>
+            <input class="field" type="text" id="addrInput" value="0x08000000" spellcheck="false">
+          </div>
+        </div>
+        <div class="image-info" id="imageInfo"></div>
+      </fieldset>
+
+      <div class="options">
+        <label><input class="px-check" type="checkbox" id="verifyOpt" checked> Verify after&nbsp;writing</label>
+        <label><input class="px-check" type="checkbox" id="runOpt" checked> Start 4-TME when&nbsp;done</label>
+      </div>
+
+      <div class="flash-row">
+        <button id="flashBtn" class="btn primary big" disabled>Flash Firmware</button>
+        <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <div id="status" class="status-text">Loading firmware&hellip;</div>
+      </div>
+
+      <div class="console-container">
+        <div class="console-header">
+          <span class="console-title">Live debug terminal</span>
+          <button id="downloadLogBtn" class="btn small" type="button">Download log (.txt)</button>
+        </div>
+        <div id="consoleBox" class="console-box"></div>
+      </div>
+
+      <a href="#" id="videoLink" target="_blank" rel="noopener" class="btn" hidden>
+        Watch the setup &amp; flashing video
+      </a>
+    </div>
+
+    <details class="px-details">
+      <summary>Troubleshooting</summary>
+
+      <h3>DFU in FS Mode is not in the&nbsp;list</h3>
+      <p>The Seed is not in DFU mode yet. Repeat step 2, try a different cable (many micro&#8209;USB cables are charge only) and plug straight into the computer. On Windows, Device Manager shows <em>DFU in FS Mode</em> while it is in DFU&nbsp;mode.</p>
+
+      <h3>Windows: "Access denied" or "Unable to claim&nbsp;interface"</h3>
+      <p>Chrome can only talk to the bootloader through the WinUSB driver. Download <a href="https://zadig.akeo.ie/" target="_blank" rel="noopener">Zadig</a>, put the Seed in DFU mode, choose <em>Options &gt; List All Devices</em>, select <em>DFU in FS Mode</em>, pick <em>WinUSB</em> and click <em>Replace Driver</em>. This is needed once per&nbsp;computer.</p>
+
+      <h3>Linux: the device appears but cannot be&nbsp;opened</h3>
+      <p>Add a udev rule so your user can access it, for example <code>SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="df11", MODE="0666"</code> in <code>/etc/udev/rules.d/50-stm32-dfu.rules</code>, then unplug and replug the&nbsp;Seed.</p>
+
+      <h3>"Built for the Daisy bootloader" or "will not&nbsp;fit"</h3>
+      <p>The ROM bootloader this page talks to writes the Seed's 128&nbsp;KB internal flash only. Build for internal flash (the default for the Daisy Seed board in the Arduino IDE). If the build is too big, use <em>Tools &gt; Optimize &gt; Faster (-O2) with LTO</em>: 4-TME v16 with USB support set to CDC is about 120&nbsp;KB that&nbsp;way.</p>
+
+      <h3>It flashed, but the editor can't find&nbsp;4-TME</h3>
+      <p>The editor talks to 4-TME over its USB port as a serial port, which only exists when the firmware was built with <em>Tools &gt; USB support &gt; CDC (generic 'Serial' supersede U(S)ART)</em>. The release firmware on this site is built that&nbsp;way.</p>
+
+      <h3>It flashed, but 4-TME does not&nbsp;start</h3>
+      <p>Press RESET, or unplug and replug. If it still does not start, click <em>Download Log</em> and send it&nbsp;over.</p>
+
+      <h3>Warnings about "A transfer error has&nbsp;occurred"</h3>
+      <p>The flasher resends any piece that fails in smaller parts and checks the result byte by byte, so a few warnings in the log are normal. <code>?block=256</code> on the page address forces small transfers from the&nbsp;start.</p>
+    </details>
+    </div>
+
+    <footer class="foot">
+      <div>&copy; .axs instruments. All rights&nbsp;reserved.</div>
+      <div>Target: Daisy Seed &middot; STM32H750 &middot; 128&nbsp;KB</div>
+    </footer>
+  </main>
+
+  <script type="module">
+    import { FirmwareImage, StmDfuse, DfuError, CHIPS, hex32 } from './dfuse.js';
+    import { SerialTransport, Link } from './transport.js';
+    import { msg, CMD, RPL, MAGIC, decodeInfo } from './protocol.js';
+    import { keepDemoInLinks } from './app.js';
+
+    const CHIP = CHIPS.STM32H750;
+    const $ = (id) => document.getElementById(id);
+    const flashBtn = $('flashBtn');
+    const statusDiv = $('status');
+    const consoleBox = $('consoleBox');
+    const imageInfo = $('imageInfo');
+    const progress = $('progress');
+    const progressBar = $('progressBar');
+
+    const logHistory = [];
+    let manifest = null;
+    let releaseImage = null;
+    let customImage = null;
+    let busy = false;
+    keepDemoInLinks();
+
+    // Start screen: the editors, or the flasher (#flash)
+    function route() {
+      let flash = location.hash === '#flash';
+      if (!flash && busy) {                       // never hide a flash in progress
+        history.replaceState(null, '', '#flash');
+        flash = true;
+      }
+      $('chooser').hidden = flash;
+      $('flasherView').hidden = !flash;
+      $('subtitle').innerHTML = flash ? 'WebUSB / DFU Firmware&nbsp;Flasher' : 'Sound, presets, settings and firmware over&nbsp;USB';
+      document.title = flash ? '4-TME Firmware Flasher | .axs instruments' : '4-TME Tools | .axs instruments';
+    }
+    window.addEventListener('hashchange', route);
+    window.addEventListener('popstate', route);
+    $('backLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      if (busy) return;
+      history.pushState(null, '', location.pathname + location.search);
+      route();
+      window.scrollTo(0, 0);
+    });
+    window.addEventListener('beforeunload', (e) => { if (busy) { e.preventDefault(); e.returnValue = ''; } });
+    route();
+
+    function log(message, type = 'INFO') {
+      const line = `[${new Date().toLocaleTimeString()}] [${type}] ${message}`;
+      logHistory.push(line);
+      consoleBox.textContent += line + '\n';
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+    }
+
+    // Keep the last two words together so a status line never ends on one word.
+    const keepTogether = (s) => s.replace(/ (\S+)$/, ' $1');
+
+    function setStatus(text, kind = '') {
+      statusDiv.textContent = keepTogether(text);
+      statusDiv.className = 'status-text' + (kind ? ' ' + kind : '');
+    }
+
+    function setProgress(fraction) {
+      progress.classList.toggle('visible', fraction !== null);
+      progressBar.style.width = `${Math.round((fraction || 0) * 100)}%`;
+    }
+
+    $('downloadLogBtn').addEventListener('click', () => {
+      const header = [`4-TME flasher log, ${new Date().toISOString()}`, `Browser: ${navigator.userAgent}`, `Firmware source: ${source()}`, ''];
+      const url = URL.createObjectURL(new Blob([header.concat(logHistory).join('\n')], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `4-tme-flasher-log-${Date.now()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    const source = () => document.querySelector('input[name="source"]:checked').value;
+    const currentImage = () => (source() === 'release' ? releaseImage : customImage);
+
+    function describe(image) {
+      const segs = image.segments(CHIP.wordSize);
+      const last = segs[segs.length - 1];
+      const kb = (image.byteCount / 1024).toFixed(1);
+      const used = Math.round(((last.address + last.data.length - CHIP.flashBase) / (CHIP.flashEnd - CHIP.flashBase)) * 100);
+      return `${kb} KB, ${hex32(segs[0].address)} to ${hex32(last.address + last.data.length - 1)}` +
+        (segs.length > 1 ? `, ${segs.length} parts` : '') + (used > 0 && used <= 100 ? `, ${used}% of flash` : '');
+    }
+
+    function showImageInfo() {
+      const image = currentImage();
+      imageInfo.textContent = '';
+      if (!image) { flashBtn.disabled = true; return; }
+      imageInfo.append(describe(image));
+      for (const w of image.warnings(CHIP)) {
+        const span = document.createElement('span');
+        span.className = 'warn';
+        span.textContent = keepTogether('Warning: ' + w);
+        imageInfo.append(span);
+      }
+      flashBtn.disabled = busy;
+    }
+
+    function parseAddress(text) {
+      const t = String(text).trim();
+      const n = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t, 16) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
+      if (Number.isNaN(n)) throw new DfuError(`"${text}" is not an address`);
+      return (n < CHIP.flashBase ? CHIP.flashBase + n : n) >>> 0;   // small numbers are offsets, e.g. "0x4000"
+    }
+
+    // Release firmware from manifest.json
+    async function loadRelease() {
+      const res = await fetch('manifest.json?v=' + Date.now());
+      if (!res.ok) throw new DfuError(`Could not download manifest.json (${res.status})`);
+      manifest = await res.json();
+      const build = manifest.builds && manifest.builds[0];
+      if (!build || !build.parts || !build.parts.length) {
+        $('versionBadge').textContent = 'Firmware: no release yet';
+        $('chooserVersion').textContent = 'no release yet';
+        $('releaseLabel').textContent = 'Latest release (none published yet)';
+        document.querySelector('input[value="release"]').disabled = true;
+        document.querySelector('input[value="custom"]').checked = true;
+        onSourceChange();
+        log('manifest.json lists no release yet; flash a custom file.');
+        return false;
+      }
+      const v = manifest.version || '?';
+      $('versionBadge').textContent = `Firmware: ${v}`;
+      $('chooserVersion').textContent = `latest release ${v}`;
+      $('releaseLabel').textContent = `Latest release (${v})`;
+      if (manifest.video) { $('videoLink').href = manifest.video; $('videoLink').hidden = false; }
+
+      const image = new FirmwareImage();
+      for (const part of build.parts) {
+        const r = await fetch(part.path + '?v=' + Date.now());
+        if (!r.ok) throw new DfuError(`Could not download ${part.path} (${r.status})`);
+        const name = part.path.split('/').pop();
+        if (/\.(hex|ihex)$/i.test(part.path)) image.addHex(await r.text(), name);   // addresses come from the file
+        else image.addBin(new Uint8Array(await r.arrayBuffer()), parseAddress(part.offset || '0'), name);
+        log(`Loaded ${name}`);
+      }
+      image.segments(CHIP.wordSize);   // throws if parts overlap
+      releaseImage = image;
+      log(`Release ${v}: ${describe(image)}`);
+      return true;
+    }
+
+    async function loadCustom() {
+      const file = $('fileInput').files[0];
+      customImage = null;
+      if (!file) return;
+      const isHex = /\.(hex|ihex)$/i.test(file.name);
+      $('addrRow').classList.toggle('visible', !isHex);
+      try {
+        const image = new FirmwareImage();
+        if (isHex) image.addHex(await file.text(), file.name);
+        else image.addBin(new Uint8Array(await file.arrayBuffer()), parseAddress($('addrInput').value), file.name);
+        image.segments(CHIP.wordSize);
+        customImage = image;
+        log(`Custom file ${file.name}: ${describe(image)}`);
+        setStatus('Ready to flash');
+      } catch (e) {
+        log(`${file.name}: ${e.message}`, 'ERROR');
+        setStatus(e.message, 'error');
+      }
+    }
+
+    function onSourceChange() {
+      $('customFields').classList.toggle('visible', source() === 'custom');
+      showImageInfo();
+      if (source() === 'custom' && !customImage) setStatus('Choose a .bin or .hex file');
+      else if (currentImage()) setStatus('Ready to flash');
+    }
+
+    document.querySelectorAll('input[name="source"]').forEach((r) => r.addEventListener('change', onSourceChange));
+    $('fileInput').addEventListener('change', async () => { await loadCustom(); showImageInfo(); });
+    $('addrInput').addEventListener('change', async () => { await loadCustom(); showImageInfo(); });
+
+    // ---------- restart into DFU over USB serial (firmware v16+) ----------
+    function dfuStatus(text, kind = '') {
+      const el = $('dfuStatus');
+      el.hidden = !text;
+      el.textContent = keepTogether(text);
+      el.className = 'status-text' + (kind ? ' ' + kind : '');
+    }
+    $('dfuOverUsbBtn').addEventListener('click', async () => {
+      if (!SerialTransport.supported) { dfuStatus('Web Serial is not available in this browser. Use Chrome or Edge on a computer.', 'error'); return; }
+      const t = new SerialTransport();
+      const link = new Link(t);
+      try {
+        dfuStatus("Choose 4-TME's USB serial port in the popup");
+        await t.open();
+        log(`Opened ${t.name}`);
+        const info = decodeInfo(await link.request(msg(CMD.INFO), RPL.INFO, 1200));
+        log(`4-TME firmware ${info.version} (editor protocol ${info.protocol})`);
+        await link.request(msg(CMD.BOOTLOADER, ...MAGIC.BOOTLOADER), RPL.BOOTLOADER, 1200);
+        log('4-TME is restarting into DFU mode', 'SUCCESS');
+        dfuStatus('4-TME is restarting in DFU mode. Now click Flash Firmware and pick DFU in FS Mode.', 'ok');
+      } catch (e) {
+        const text = e.name === 'NotFoundError' ? 'No port chosen.'
+          : e.timeout ? 'That port did not answer. This needs firmware v16 or later built with USB support set to CDC; otherwise use the BOOT and RESET buttons.'
+          : e.message;
+        log(text, 'ERROR');
+        dfuStatus(text, 'error');
+      } finally {
+        await t.close();
+      }
+    });
+
+    // Errors from WebUSB itself get a plain explanation.
+    function explain(err) {
+      const m = (err && err.message) || String(err);
+      if (err && err.name === 'NotFoundError' && /No device selected/i.test(m)) {
+        return 'No device chosen. If DFU in FS Mode was not in the list, the Seed is not in DFU mode yet (see step 2).';
+      }
+      if (err && (err.name === 'SecurityError' || err.name === 'NetworkError') && /access denied|claim|open/i.test(m)) {
+        const os = /Windows/i.test(navigator.userAgent) ? 'On Windows this usually means the WinUSB driver is missing; see Troubleshooting.'
+          : /Linux/i.test(navigator.userAgent) ? 'On Linux this usually means a udev rule is missing; see Troubleshooting.'
+          : 'Close any other program using the Seed (Arduino IDE, STM32CubeProgrammer, dfu-util) and try again.';
+        return `The browser could not open the bootloader (${m}). ${os}`;
+      }
+      if (err && err.name === 'NotFoundError') return 'The Seed disconnected. Re-enter DFU mode and try again.';
+      if (err && err.usbUnreliable) return 'USB transfers to the bootloader keep failing. Re-enter DFU mode and try another cable or port. Please send the log if it keeps happening.';
+      return m;
+    }
+
+    flashBtn.addEventListener('click', async () => {
+      if (!navigator.usb) {
+        setStatus('WebUSB is not available in this browser. Use Chrome or Edge on a computer.', 'error');
+        log('navigator.usb is undefined', 'ERROR');
+        return;
+      }
+      const image = currentImage();
+      if (!image) return;
+      const warnings = image.warnings(CHIP);
+      if (warnings.length && !confirm(warnings.join('\n\n') + '\n\nFlash it anyway?')) return;
+
+      busy = true;
+      flashBtn.disabled = true;
+      setProgress(null);
+      let dfu = null;
+      let left = false;
+      const t0 = performance.now();
+      try {
+        setStatus('Choose DFU in FS Mode in the popup');
+        log('Requesting WebUSB device 0483:DF11 (STM32 ROM bootloader)');
+        const usbDevice = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x0483, productId: 0xdf11 }] });
+        log(`Selected: ${usbDevice.productName || 'DFU in FS Mode'}${usbDevice.serialNumber ? ', serial ' + usbDevice.serialNumber : ''}`);
+
+        setStatus('Connecting');
+        const blockParam = parseInt(new URLSearchParams(location.search).get('block'), 10);   // ?block=256 forces smaller transfers
+        dfu = new StmDfuse(usbDevice, { log, chip: CHIP, blockSize: Number.isFinite(blockParam) ? blockParam : 0 });
+        await dfu.open();
+        log(`DFU ready: ${dfu.layout.name}, writing for ${CHIP.name} (${(CHIP.flashEnd - CHIP.flashBase) / 1024} KB)`);
+        for (const w of warnings) log(w, 'WARN');
+
+        setProgress(0);
+        await dfu.flash(image, {
+          verify: $('verifyOpt').checked,
+          onProgress: (f, phase) => { setProgress(f); setStatus(`${phase} ${Math.round(f * 100)}%`); },
+        });
+        log(`Flash ${$('verifyOpt').checked ? 'written and verified' : 'written'} in ${((performance.now() - t0) / 1000).toFixed(1)} s`, 'SUCCESS');
+
+        if ($('runOpt').checked) {
+          log('Asking the bootloader to start the firmware');
+          await dfu.leave();
+          left = true;
+        }
+        const note = source() === 'release' && manifest && manifest.builds[0].note ? ' ' + manifest.builds[0].note : '';
+        setStatus(($('runOpt').checked ? 'Done! 4-TME is starting.' : 'Done! Press RESET to start 4-TME.') + note, 'ok');
+      } catch (err) {
+        const text = explain(err);
+        log(text, 'ERROR');
+        if (err && err.name) log(`(${err.name}: ${err.message})`, 'DEBUG');
+        if (err && err.stack) console.error(err);
+        setStatus(text, 'error');
+        setProgress(null);
+      } finally {
+        if (dfu && !left) await dfu.close();
+        busy = false;
+        showImageInfo();
+      }
+    });
+
+    log('Flasher loaded. Target: Daisy Seed (STM32H750), 128 KB internal flash.');
+    loadRelease()
+      .then((ok) => { if (ok) { setStatus('Ready to flash'); showImageInfo(); } })
+      .catch((e) => {
+        log(e.message, 'ERROR');
+        setStatus('Could not load the release firmware. You can still flash a custom file.', 'error');
+      });
+  </script>
+</body>
+</html>

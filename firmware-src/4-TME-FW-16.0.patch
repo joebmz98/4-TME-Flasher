@@ -1,0 +1,258 @@
+--- a/src/4-tme-fw/4-tme-fw.ino
++++ b/src/4-tme-fw/4-tme-fw.ino
+@@ -1,5 +1,6 @@
+ /*
+-  4-TME PolySynth prototype v15.6 — 4 voices, 16 encoders, OLED menu, shift / voice groups, MIDI in
++  4-TME PolySynth prototype v16.0 — 4 voices, 16 encoders, OLED menu, shift / voice groups, MIDI in,
++  USB link to the web editor
+   Daisy Seed / DaisyDuino (Arduino IDE)
+ 
+   Per voice: VariableShape osc (tri>saw>sq>PWM) -> MoogLadder LPF -> ADSR VCA -> pan/level
+@@ -136,6 +137,16 @@
+ 
+   Libraries: FortySevenEffects MIDI, Adafruit GFX, Adafruit SSD1306 (+ BusIO)
+ 
++  ---------------------------------------------------------------- WEB EDITOR (v16)
++  TmeEditor.h talks to the 4-TME web tools (joebmz98/4-TME-Flasher) over the
++  Seed's USB port as a serial port: edit every voice, load / save / name /
++  clear presets, back them up to a file, change the SETTINGS menu, watch MIDI
++  in, and restart into DFU mode for firmware updates. Edits from the page go
++  through the same code as the panel (OLED readout, last-state save, preset
++  sectors in the W25Q64), and edits on the panel show up on the page.
++  Build with Tools > USB support > "CDC (generic 'Serial' supersede U(S)ART)".
++  The hooks the link calls are at the bottom of this file.
++
+   ---------------------------------------------------------------- DEBUG
+   DEBUG_SERIAL 1 prints every edit + a status line every 2 s
+   (Tools > USB support: CDC, 115200 baud). Leave at 0 for normal use.
+@@ -149,6 +160,7 @@
+ #include <Adafruit_SSD1306.h>
+ #include <Fonts/Picopixel.h>
+ #include <SPI.h>
++#include "TmeEditor.h"           // web editor link over USB serial
+ 
+ // ------------------------------------------------------------------ config
+ #define DEBUG_SERIAL        0
+@@ -227,6 +239,7 @@
+ 
+ MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);
+ Adafruit_SSD1306 display(OLED_W, OLED_H, &Wire, -1);
++tme::Editor editor;              // web editor link (TmeEditor.h)
+ 
+ // ------------------------------------------------------------------ parameters
+ enum Param {
+@@ -814,13 +827,14 @@
+   }
+ }
+ 
+-bool startPresetSave(uint8_t slot, const char *name) {
++// params: [voice][param] as 64 values (the web editor writes presets from a backup file)
++bool startPresetWrite(uint8_t slot, const char *name, const int16_t *params) {
+   StoredPreset pr;
+   memset(&pr, 0, sizeof(pr));
+   pr.magic = FLASH_MAGIC; pr.version = PRESET_VERSION;
+   memcpy(pr.name, name, NAME_LEN);
+   for (int v = 0; v < NUM_VOICES; v++)
+-    for (int id = 0; id < P_COUNT; id++) pr.param[v][id] = voices[v].param[id];
++    for (int id = 0; id < P_COUNT; id++) pr.param[v][id] = params[v * P_COUNT + id];
+   pr.checksum = checksum32((const uint8_t *)&pr, offsetof(StoredPreset, checksum));
+   if (!flashStartWrite(presetAddr(slot), &pr, sizeof(pr))) return false;
+   presetUsed[slot] = true;
+@@ -828,6 +842,13 @@
+   return true;
+ }
+ 
++bool startPresetSave(uint8_t slot, const char *name) {   // the current sound
++  int16_t params[NUM_VOICES * P_COUNT];
++  for (int v = 0; v < NUM_VOICES; v++)
++    for (int id = 0; id < P_COUNT; id++) params[v * P_COUNT + id] = voices[v].param[id];
++  return startPresetWrite(slot, name, params);
++}
++
+ bool startPresetClear(uint8_t slot) {  // erase only: a blank sector reads as an empty slot
+   if (!flashStartWrite(presetAddr(slot), fjBuf, 0)) return false;
+   presetUsed[slot] = false; presetName[slot][0] = 0;
+@@ -1778,14 +1799,19 @@
+   updateNoteLed();
+ }
+ 
+-void handleNoteOn(byte channel, byte note, byte velocity)  { noteOn(note); }
+-void handleNoteOff(byte channel, byte note, byte velocity) { noteOff(note); }
++void handleNoteOn(byte channel, byte note, byte velocity) {
++  editor.noteIn(channel, note, velocity);    // for the web editor's MIDI monitor
++  noteOn(note);
++}
++void handleNoteOff(byte channel, byte note, byte velocity) { editor.activity(); noteOff(note); }
+ void handlePitchBend(byte channel, int bend) {
++  editor.activity();
+ #if BEND_ENABLE
+   bendSt = bend / 8192.0f * BEND_RANGE_ST;
+ #endif
+ }
+ void handleControlChange(byte channel, byte cc, byte value) {
++  editor.activity();
+   if (cc == 120 || cc == 123) allNotesOff();
+ }
+ 
+@@ -1934,6 +1960,7 @@
+   bootAnimation();                            // also checks every LED and the display
+   if (!flashOk) showToast("NO FLASH", "PRESETS OFF");
+   markActivity();
++  editor.begin();                             // web editor link on the USB port
+ 
+   DAISY.begin(AudioCallback);
+ 
+@@ -1959,6 +1986,7 @@
+   updateLeds();
+   pollMidi();
+   serviceDisplay();                           // at most one small I2C chunk per pass
++  editor.poll();                              // web editor frames on the USB port
+   serviceSettingsSave();
+   servicePresetOps();
+   serviceStateSave();
+@@ -1981,4 +2009,143 @@
+     cbMaxCycles = 0; cbSumCycles = 0; cbCount = 0; loopCount = 0;
+   }
+ #endif
+-}
+\ No newline at end of file
++}
++// ------------------------------------------------------------------ web editor hooks (TmeEditor.h)
++// Called from editor.poll() in loop(). Each one does what the matching panel
++// action does, so the OLED, LEDs, flash saves and menus stay consistent.
++
++static bool flashBusyNow() { return flashJobBusy() || pendingOp != OP_NONE; }
++
++uint8_t tmeHookFlags() {
++  return (flashOk ? 1 : 0) | (flashBusyNow() ? 2 : 0) | (settingsSavePending ? 4 : 0) | (stateDirty ? 8 : 0);
++}
++
++void tmeHookGetSettings(uint8_t *s) {
++  s[0] = midiChannel; s[1] = ledLevel; s[2] = saverIdx; s[3] = showValues;
++}
++
++void tmeHookSetSettings(const uint8_t *s) {
++  if (s[0] != midiChannel) { midiChannel = s[0]; applyMidiChannel(); }
++  ledLevel = ledLevelOrig = s[1];
++  ledOut[0] = ledOut[1] = ledOut[2] = ledOut[3] = -1;   // redraw the LEDs at the new level
++  saverIdx = s[2];
++  showValues = s[3];
++  wakeScreen();
++  requestSettingsSave();                      // to flash half a second later, like the menu
++  uiDirty = true;
++}
++
++void tmeHookResetSettings() {
++  const uint8_t def[4] = { 0, 1, 2, 1 };      // OMNI, MID, 5 min, values on
++  tmeHookSetSettings(def);
++}
++
++int16_t tmeHookParamMax(uint8_t id) { return id < P_COUNT ? PARAM_MAX[id] : 0; }
++
++int16_t tmeHookGetParam(uint8_t voice, uint8_t id) {
++  return (voice < NUM_VOICES && id < P_COUNT) ? voices[voice].param[id] : 0;
++}
++
++void tmeHookSetParam(uint8_t voice, uint8_t id, int16_t value) {
++  if (voice >= NUM_VOICES || id >= P_COUNT) return;
++  voices[voice].param[id] = value;
++  applyParam(voice, id);                      // the voices' smoothing glides to it
++}
++
++void tmeHookSoundChanged(uint8_t voice, uint8_t id, bool readout) {
++  wakeScreen();
++  if (readout && voice < NUM_VOICES && id < P_COUNT) {   // same readout as turning that encoder
++    lastParam = id; lastParamMs = millis(); lastParamVoice = voice;
++  }
++  markStateDirty();                           // saved as the last state 2 s after the last change
++  uiDirty = true;
++}
++
++uint8_t tmeHookSelVoice() { return (uint8_t)selVoice; }
++
++uint8_t tmeHookMuteMask() {
++  uint8_t m = 0;
++  for (int v = 0; v < NUM_VOICES; v++) if (voices[v].muted) m |= 1 << v;
++  return m;
++}
++
++void tmeHookSetVoices(uint8_t sel, uint8_t muteMask) {
++  if (sel < NUM_VOICES) selVoice = sel;
++  for (int v = 0; v < NUM_VOICES; v++) voices[v].muted = (muteMask >> v) & 1;
++  markStateDirty();
++  uiDirty = true;
++}
++
++bool tmeHookPresetInfo(uint8_t slot, char *name) {
++  if (slot >= NUM_PRESETS || !presetUsed[slot]) return false;
++  memcpy(name, presetName[slot], NAME_LEN);
++  return true;
++}
++
++uint8_t tmeHookReadPreset(uint8_t slot, char *name, int16_t *params) {
++  if (!flashOk) return TME_NO_FLASH;
++  if (flashBusyNow()) return TME_BUSY;        // no reads while a sector is being erased
++  StoredPreset pr;
++  if (!readPreset(slot, pr)) return TME_EMPTY;
++  memcpy(name, pr.name, NAME_LEN);
++  for (int v = 0; v < NUM_VOICES; v++)
++    for (int id = 0; id < P_COUNT; id++) params[v * P_COUNT + id] = pr.param[v][id];
++  return TME_OK;
++}
++
++uint8_t tmeHookLoadPreset(uint8_t slot) {
++  if (!flashOk) return TME_NO_FLASH;
++  if (flashBusyNow()) return TME_BUSY;
++  if (!loadPreset(slot)) return TME_EMPTY;
++  char t[16];
++  presetSlotText(slot, t, sizeof(t));
++  wakeScreen();
++  showToast("LOADED", t);
++  markStateDirty();
++  return TME_OK;
++}
++
++uint8_t tmeHookSavePreset(uint8_t slot, const char *name) {
++  if (!flashOk) return TME_NO_FLASH;
++  if (flashBusyNow() || !startPresetSave(slot, name)) return TME_BUSY;
++  char t[16];
++  presetSlotText(slot, t, sizeof(t));
++  wakeScreen();
++  showToast("SAVED", t);
++  return TME_OK;
++}
++
++uint8_t tmeHookWritePreset(uint8_t slot, const char *name, const int16_t *params) {
++  if (!flashOk) return TME_NO_FLASH;
++  if (flashBusyNow() || !startPresetWrite(slot, name, params)) return TME_BUSY;
++  return TME_OK;                              // no toast: a restore writes many slots in a row
++}
++
++uint8_t tmeHookClearPreset(uint8_t slot) {
++  if (!flashOk) return TME_NO_FLASH;
++  if (flashBusyNow() || !startPresetClear(slot)) return TME_BUSY;
++  char t[16];
++  snprintf(t, sizeof(t), "%u. - - -", slot + 1);
++  wakeScreen();
++  showToast("CLEARED", t);
++  return TME_OK;
++}
++
++void tmeHookInitSound() {
++  initSound();
++  wakeScreen();
++  showToast("INIT", "DEFAULT SOUND");
++}
++
++void tmeHookVoices(uint8_t *gates, uint8_t *env, uint8_t *lfo) {
++  *gates = 0;
++  for (int v = 0; v < NUM_VOICES; v++) {
++    if (voices[v].gate) *gates |= 1 << v;
++    env[v] = (uint8_t)(clampf(voices[v].envOut, 0.0f, 1.0f) * 127.0f + 0.5f);
++    lfo[v] = (uint8_t)((clampf(voices[v].lfoVal, -1.0f, 1.0f) + 1.0f) * 63.5f + 0.5f);
++  }
++}
++
++void tmeHookBootloader() {
++  hw.ResetToBootloader();                     // drives the BOOT pin and resets into the ROM DFU bootloader
++}

@@ -1,0 +1,13 @@
+{
+  "name": "4-TME 4-Voice Poly Synth Firmware",
+  "version": "v16.0 beta",
+  "builds": [
+    {
+      "chipFamily": "STM32H750",
+      "note": "This is the first build with the USB editor link: please report anything odd.",
+      "parts": [
+        { "path": "firmware/4-tme-fw.ino.bin", "offset": "0x08000000" }
+      ]
+    }
+  ]
+}
