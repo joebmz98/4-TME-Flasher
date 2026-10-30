@@ -36,7 +36,18 @@
   .hint { font-size: 16px; line-height: 1.4; margin-top: 4px; max-width: 46ch; }
 
   .seg { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-  .seg.ch { max-width: 420px; }
+  .row > .pick { justify-self: end; }
+  @media (max-width: 680px) { .row > .pick { justify-self: start; } }
+  .pick select {
+    -webkit-appearance: none; appearance: none; cursor: pointer; min-width: 160px;
+    font-family: var(--label); font-size: 16px; line-height: 1; text-transform: uppercase;
+    color: var(--ink); background: var(--paper) var(--chev) right 14px center / 12px 8px no-repeat;
+    padding: 11px 40px 10px 14px; border: 2px solid transparent; border-image: var(--px-frame) 8 / 8px round;
+    --chev: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' shape-rendering='crispEdges' fill='white'><path d='M0 0h12v2h-2v2h-2v2h-4v-2h-2v-2h-2z'/></svg>");
+  }
+  .pick select:hover { border-image: var(--px-double) 12 / 12px round; }
+  .pick select:focus-visible { outline: 2px dashed var(--ink); outline-offset: 3px; }
+  .pick select option { background: var(--paper); color: var(--ink); font-family: var(--label); }
   .seg label { position: relative; }
   .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
   .seg span {
@@ -117,7 +128,7 @@
         <div class="row">
           <div><div class="label">MIDI in channel <span class="chip">MIDI</span></div>
             <div class="hint">Omni plays every channel. Notes go round-robin over the four&nbsp;voices.</div></div>
-          <div class="seg ch" id="segCh" role="radiogroup" aria-label="MIDI in channel"></div>
+          <label class="pick"><select id="chSelect" aria-label="MIDI in channel"></select></label>
         </div>
       </section>
 
@@ -198,7 +209,8 @@ function buildSeg(host, name, options, label = (o) => o) {
     `<label><input type="radio" name="${name}" value="${i}"><span>${label(o, i)}</span></label>`).join('');
   host.addEventListener('change', (e) => change(name, Number(e.target.value)));
 }
-buildSeg($('segCh'), 'midiChannel', SETTINGS[0].options, (o, i) => (i ? String(i) : 'Omni'));
+$('chSelect').innerHTML = SETTINGS[0].options.map((o, i) => `<option value="${i}">${i ? 'Channel ' + i : 'Omni'}</option>`).join('');
+$('chSelect').addEventListener('change', (e) => change('midiChannel', Number(e.target.value)));
 buildSeg($('segLed'), 'ledLevel', SETTINGS[1].options, (o) => ({ LO: 'Low', MID: 'Mid', HI: 'High' })[o]);
 buildSeg($('segSaver'), 'saverIdx', SETTINGS[2].options, (o, i) => (i ? `${T.SAVER_MIN[i]} min` : 'Off'));
 $('valuesSw').addEventListener('change', (e) => change('showValues', e.target.checked ? 1 : 0));
@@ -207,7 +219,8 @@ const gates = $('gates');
 gates.innerHTML = '<span class="ro-k">Voices</span>' + [1, 2, 3, 4].map((v) => `<span class="gate"><span class="vled" id="g${v - 1}"></span>Voice ${v}</span>`).join('');
 
 function render() {
-  for (const f of ['midiChannel', 'ledLevel', 'saverIdx']) {
+  $('chSelect').value = String(settings.midiChannel);
+  for (const f of ['ledLevel', 'saverIdx']) {
     const r = document.querySelector(`input[name="${f}"][value="${settings[f]}"]`);
     if (r) r.checked = true;
   }
