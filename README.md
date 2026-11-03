@@ -147,8 +147,8 @@ Troubleshooting is on the page: Zadig/WinUSB on Windows, a udev rule on Linux,
 | `transport.js` | Web Serial and demo transports, request/reply |
 | `oled.js` | The OLED copy: Picopixel and the firmware's planet art |
 | `dfuse.js` | STM32 DfuSe over WebUSB, with the H750 chip table |
-| `theme.css` | The DCLK / MC8P pixel theme plus 4-TME parts (orange LEDs, planet) |
-| `assets/` | Fonts (licences included), planet art and icons (`tools/make-art.py` draws them with the firmware's Bayer dither) |
+| `theme.css` | The DCLK / MC8P pixel theme, with the MC8P header's space strip, plus 4-TME's orange LEDs |
+| `assets/` | Fonts (licences included) and the site icon (the .axs logo in white, same files as the MC8P MkII and DCLK tools) |
 | `firmware/`, `manifest.json` | The release |
 | `firmware-src/` | 4-TME v16 with the USB link |
 | `test/` | Simulated H750 ROM bootloader, flasher and protocol tests; host build of the firmware link |

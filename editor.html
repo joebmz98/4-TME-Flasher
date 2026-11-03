@@ -7,8 +7,10 @@
 <link rel="preload" href="assets/fonts/alagard.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="theme.css">
-<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
-<link rel="apple-touch-icon" href="assets/favicon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/icons/favicon-64.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="assets/icons/icon-512.png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 <style>
   /* Sound editor. The deck at the top is a small copy of 4-TME's panel: the
      128x32 OLED drawn pixel for pixel like the firmware, and the four voice
@@ -171,11 +173,11 @@
         <p class="logo-sub">4-Voice Poly Synth</p>
       </div>
     </div>
-    <div class="trace" aria-hidden="true">
-      <span class="node"></span><span class="pulses"></span>
-      <span class="flat planet-spot"><img class="planet px" src="assets/planet.svg" width="80" height="56" alt=""></span>
-      <span class="pulses short"></span><span class="flat end"></span><span class="node"></span>
-    </div>
+    <div class="space" aria-hidden="true">
+        <span class="planet"></span>
+        <span class="orbit"><i class="star"></i><i class="star s"></i><i class="star"></i><i class="star s"></i><i class="star"></i><i class="star s"></i><i class="ufo"></i></span>
+        <span class="moon"></span>
+      </div>
     <p class="sub">Every knob of all four voices and the 32 presets, live over USB. Without 4-TME connected the knobs still work on a draft you can send&nbsp;later.</p>
   </header>
 
